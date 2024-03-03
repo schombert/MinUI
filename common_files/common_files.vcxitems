@@ -1,0 +1,27 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <MSBuildAllProjects Condition="'$(MSBuildVersion)' == '' Or '$(MSBuildVersion)' &lt; '16.0'">$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <ItemsProjectGuid>{941b482b-7d17-4590-844b-15293ab21c63}</ItemsProjectGuid>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(MSBuildThisFileDirectory)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ProjectCapability Include="SourceItemsFromImports" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="$(MSBuildThisFileDirectory)minui_interfaces.hpp" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)minui_text_impl.hpp" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)stools.hpp" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)unordered_dense.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)minui_core_impl.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)minui_text_impl.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)stools.cpp" />
+  </ItemGroup>
+</Project>
