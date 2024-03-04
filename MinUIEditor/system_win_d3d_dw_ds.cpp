@@ -971,22 +971,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 				} // fallthrough; keep above WM_MOUSEMOVE
 				case WM_MOUSEMOVE:
 				{
-					if(app->selecting_edit_text != edit_selection_mode::none) {
-						auto f = (app->minui_root && !app->minui_root->focus_stack.empty()) ? app->minui_root->focus_stack.back().l_interface : nullptr;
-						if(f) {
-							auto ei = static_cast<ieditable_text*>(f->get_interface(iface::editable_text));
-							if(ei) {
-								auto control_pos = app->to_screen_space(f->position);
-								control_pos.x += app->window_border_size;
-								control_pos.y += app->window_border_size;
-								ei->move_cursor_by_screen_pt(*app, screen_space_point{ GET_X_LPARAM(lParam) - control_pos.x, GET_Y_LPARAM(lParam) - control_pos.y }, true);
+					if(app->minui_root && app->minui_root->edit_target && app->selecting_edit_text != edit_selection_mode::none) {
+						auto ei = app->minui_root->edit_target;
+						
+						auto control_pos = app->to_screen_space(*static_cast<dw_editable_text_provider*>(ei)->attached);
+						control_pos.x += app->window_border_size;
+						control_pos.y += app->window_border_size;
+						ei->move_cursor_by_screen_pt(*app, screen_space_point{ GET_X_LPARAM(lParam) - control_pos.x, GET_Y_LPARAM(lParam) - control_pos.y }, true);
 
-								if(app->minui_root->under_mouse.type_array[size_t(mouse_interactivity::button)].node == f)
-									ei->consume_mouse_event(*app, GET_X_LPARAM(lParam) - control_pos.x, GET_Y_LPARAM(lParam) - control_pos.y, uint32_t(wParam));
+						if(app->minui_root->under_mouse.type_array[size_t(mouse_interactivity::button)].node == f)
+							ei->consume_mouse_event(*app, GET_X_LPARAM(lParam) - control_pos.x, GET_Y_LPARAM(lParam) - control_pos.y, uint32_t(wParam));
 
-								return 0;
-							}
-						}
+						return 0;
 					}
 
 					if(app->imode == input_mode::follow_input) {
@@ -1026,7 +1022,90 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 						}
 						return 0;
 					}
-					if(wParam != VK_MENU && wParam != VK_SHIFT && wParam != VK_ESCAPE) {
+					if(app->minui_root && app->minui_root->edit_target) {
+						auto ei = app->minui_root->edit_target;
+						// SPECIAL EDIT COMMANDS HERE
+
+						bool ctrl_held = (GetKeyState(VK_CONTROL) & 0x80) != 0;
+
+						if(wParam == VK_RETURN) {
+							ei->send_command(*app, ieditable_text::edit_command::new_line, false);
+						} else if(wParam == VK_BACK) {
+							if(ctrl_held)
+								ei->send_command(*app, ieditable_text::edit_command::backspace_word, false);
+							else
+								ei->send_command(*app, ieditable_text::edit_command::backspace, false);
+						} else if(wParam == VK_DELETE) {
+							if(ctrl_held)
+								ei->send_command(*app, ieditable_text::edit_command::delete_word, false);
+							else
+								ei->send_command(*app, ieditable_text::edit_command::delete_char, false);
+						} else if(wParam == VK_TAB) {
+							ei->send_command(*app, ieditable_text::edit_command::tab, false);
+						} else if(wParam == VK_LEFT) {
+							if(ctrl_held) {
+									ei->send_command(*app, ieditable_text::edit_command::cursor_left_word, app->shift_down);
+							} else {
+								ei->send_command(*app, ieditable_text::edit_command::cursor_left, app->shift_down);
+							}
+							
+						} else if(wParam == VK_RIGHT) {
+							if(ctrl_held)
+								ei->send_command(*app, ieditable_text::edit_command::cursor_right_word, app->shift_down);
+							else
+								ei->send_command(*app, ieditable_text::edit_command::cursor_right, app->shift_down);
+							
+						} else if(wParam == VK_UP) {
+							ei->send_command(*app, ieditable_text::edit_command::cursor_up, app->shift_down);
+						} else if(wParam == VK_DOWN) {
+							ei->send_command(*app, ieditable_text::edit_command::cursor_down, app->shift_down);
+						} else if(wParam == VK_HOME) {
+							if(ctrl_held)
+								ei->send_command(*app, ieditable_text::edit_command::to_text_start, app->shift_down);
+							else
+								ei->send_command(*app, ieditable_text::edit_command::to_line_start, app->shift_down);
+						} else if(wParam == VK_END) {
+							if(ctrl_held)
+								ei->send_command(*app, ieditable_text::edit_command::to_text_end, app->shift_down);
+							else
+								ei->send_command(*app, ieditable_text::edit_command::to_line_end, app->shift_down);
+						} else if(wParam == VK_PRIOR) {
+							ei->send_command(*app, ieditable_text::edit_command::to_text_start, app->shift_down);
+						} else if(wParam == VK_NEXT) {
+							ei->send_command(*app, ieditable_text::edit_command::to_text_end, app->shift_down);
+						} else if(wParam == VK_INSERT) {
+							if(ctrl_held)
+								ei->send_command(*app, ieditable_text::edit_command::copy, false);
+							else if(app->shift_down)
+								ei->send_command(*app, ieditable_text::edit_command::paste, false);
+						} else if(wParam == 'A') {
+							if(ctrl_held) {
+								ei->send_command(*app, ieditable_text::edit_command::select_all, false);
+							}
+						} else if(wParam == 'C') {
+							if(ctrl_held) {
+								ei->send_command(*app, ieditable_text::edit_command::copy, false);
+							}
+						} else if(wParam == 'X') {
+							if(ctrl_held) {
+								ei->send_command(*app, ieditable_text::edit_command::cut, false);
+							}
+						} else if(wParam == 'V') {
+							if(ctrl_held) {
+								ei->send_command(*app, ieditable_text::edit_command::paste, false);
+							}
+						} else if(wParam == 'Z') {
+							if(ctrl_held) {
+								ei->send_command(*app, ieditable_text::edit_command::undo, false);
+							}
+						} else if(wParam == 'Y') {
+							if(ctrl_held) {
+								ei->send_command(*app, ieditable_text::edit_command::redo, false);
+							}
+						}
+
+						return 0;
+					} else if(wParam != VK_MENU && wParam != VK_SHIFT && wParam != VK_ESCAPE) {
 						if(app->imode == input_mode::follow_input && app->minui_root) {
 							 if(app->minui_root->pmode == prompt_mode::controller) {
 								app->minui_root->set_prompt_mode(prompt_mode::keyboard);
@@ -1050,7 +1129,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 				case WM_SYSKEYUP:
 				case WM_KEYUP:
 				{
-					if(wParam != VK_MENU && wParam != VK_SHIFT && wParam != VK_ESCAPE) {
+					if(app->minui_root && app->minui_root->edit_target) {
+						// keydown presumably eaten by edit box
+						return 0;
+					} else if(wParam != VK_MENU && wParam != VK_SHIFT && wParam != VK_ESCAPE) {
 						if(app->imode == input_mode::follow_input && app->minui_root) {
 							if(app->minui_root->pmode == prompt_mode::controller) {
 								app->minui_root->set_prompt_mode(prompt_mode::keyboard);
@@ -1388,24 +1470,24 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 				{
 					auto cmd = GET_APPCOMMAND_LPARAM(lParam);
 					if(cmd == APPCOMMAND_COPY) {
-						if(app->minui_root)
-							app->minui_root->on_direct_edit_command(ieditable_text::edit_command::copy);
+						if(app->minui_root && app->minui_root->edit_target)
+							app->minui_root->edit_target->send_command(*app, ieditable_text::edit_command::copy, app->shift_down);
 						return TRUE;
 					} else if(cmd == APPCOMMAND_CUT) {
-						if(app->minui_root)
-							app->minui_root->on_direct_edit_command(ieditable_text::edit_command::cut);
+						if(app->minui_root && app->minui_root->edit_target)
+							app->minui_root->edit_target->send_command(*app, ieditable_text::edit_command::cut, app->shift_down);
 						return TRUE;
 					} else if(cmd == APPCOMMAND_PASTE) {
-						if(app->minui_root)
-							app->minui_root->on_direct_edit_command(ieditable_text::edit_command::paste);
+						if(app->minui_root && app->minui_root->edit_target)
+							app->minui_root->edit_target->send_command(*app, ieditable_text::edit_command::paste, app->shift_down);
 						return TRUE;
 					} else if(cmd == APPCOMMAND_REDO) {
-						if(app->minui_root)
-							app->minui_root->on_direct_edit_command(ieditable_text::edit_command::redo);
+						if(app->minui_root && app->minui_root->edit_target)
+							app->minui_root->edit_target->send_command(*app, ieditable_text::edit_command::redo, app->shift_down);
 						return TRUE;
 					} else if(cmd == APPCOMMAND_UNDO) {
-						if(app->minui_root)
-							app->minui_root->on_direct_edit_command(ieditable_text::edit_command::undo);
+						if(app->minui_root && app->minui_root->edit_target)
+							app->minui_root->edit_target->send_command(*app, ieditable_text::edit_command::undo, app->shift_down);
 						return TRUE;
 					}
 					break;
@@ -3077,7 +3159,7 @@ void dw_editable_text_provider::send_command(system_interface& win, edit_command
 		case edit_command::new_line:
 			if(multiline == false) {
 				if(static_cast<win_d2d_dw_ds&>(win).minui_root->contains_focus(&attached)) {
-					static_cast<win_d2d_dw_ds&>(win).minui_root->back_out_focus(attached);
+					static_cast<win_d2d_dw_ds&>(win).minui_root->take_key_action(go_up{ });
 				}
 			} else {
 				insert_codepoint(win, L'\n');
@@ -4266,7 +4348,7 @@ struct text_services_object : public ITextStoreACP2, public ITfInputScope, publi
 			}
 		}
 
-		auto from_point = ei->get_position_from_point(*win, screen_space_point{ int32_t(ptScreen->x - (window_rect.left + screen_pos_base.x)), int32_t(ptScreen->y - (window_rect.top + screen_pos_base.y) });
+		auto from_point = ei->get_position_from_point(*win, screen_space_point{ int32_t(ptScreen->x - (window_rect.left + screen_pos_base.x)), int32_t(ptScreen->y - (window_rect.top + screen_pos_base.y)) });
 		*pacp = from_point;
 		return S_OK;
 	}

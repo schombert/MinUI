@@ -689,6 +689,7 @@ public:
 		primary, alt, none
 	} last_mcommand_sent = mcommand::none;
 	ui_node* last_mcommand_target = nullptr;
+	ieditable_text* edit_target = nullptr;
 
 	layout_position latest_mouse_position;
 
@@ -722,7 +723,6 @@ public:
 	bool on_mouse_scroll(float amount);
 	bool on_key_down(uint32_t scancode, uint32_t vk_code, bool repeat);
 	bool on_key_up(uint32_t scancode, uint32_t vk_code);
-	void on_direct_edit_command(ieditable_text::edit_command);
 	void on_window_focus(); // hide/show edit cursor
 	void on_window_kill_focus();
 	void on_update();
@@ -4580,11 +4580,13 @@ void edit_control::on_hide(root& r) {
 		fn(r, *this);
 }
 void edit_control::on_gain_focus(root& r) {
+	r.edit_target = text_data.get();
 	text_data->on_focus(r.system);
 	if(auto fn = r.get_on_gain_focus(ui_node::type_id); fn)
 		fn(r, *this);
 }
 void edit_control::on_lose_focus(root& r) {
+	r.edit_target = nullptr;
 	text_data->on_lose_focus(r.system);
 	if(auto fn = r.get_on_lose_focus(ui_node::type_id); fn)
 		fn(r, *this);
@@ -4761,6 +4763,22 @@ ui_node* effective_focus_target(ui_node* in) {
 		return in;
 
 	return effective_focus_target(in->parent);
+}
+
+bool root::on_char(native_char c) {
+	if(edit_target) {
+		edit_target->insert_codepoint(system, uint32_t(c));
+		return true;
+	} 
+
+	bool positive_result = false;
+	for(size_t i = 0; i < size_t(mouse_interactivity::count); ++i) {
+		if(under_mouse.type_array[i].node) {
+			positive_result = true;
+		}
+	}
+
+	return positive_result;
 }
 
 bool root::on_mouse_move(layout_position p) {
