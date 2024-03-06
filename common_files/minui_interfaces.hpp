@@ -307,27 +307,6 @@ struct button_combination {
 	bool sticky;
 };
 
-struct controller_mappings {
-	double deadzone = 0.02;
-	float sensitivity = 1.0f;
-
-	controller_button button1 = controller_button::y;
-	controller_button button2 = controller_button::x;
-	controller_button button3 = controller_button::b;
-	controller_button button4 = controller_button::a;
-
-	controller_button first_group = controller_button::lb;
-	bool first_group_sticky = false;
-	controller_button second_group = controller_button::rb;
-	bool second_group_sticky = false;
-
-	button_combination escape = button_combination{ controller_button::lb, controller_button::rb, false };
-	button_combination info = button_combination{ controller_button::no_button, controller_button::no_button, true };
-
-	bool left_thumbstick = true;
-};
-
-
 struct em {
 	int16_t value = 0; // fixed point sizes in terms of 100ths of an em
 	auto operator<=>(em const& o) const noexcept = default;
@@ -526,7 +505,10 @@ public:
 	virtual int32_t get_number_of_displayed_lines(system_interface&) = 0;
 	virtual int32_t get_number_of_text_lines(system_interface&) = 0;
 	virtual int32_t get_starting_display_line() = 0;
+	virtual em get_single_line_width(system_interface&) = 0;
 	virtual void set_starting_display_line(int32_t v) = 0;
+	virtual em get_line_height(system_interface&) = 0;
+	virtual void resize_to_width(system_interface& s, int32_t w) = 0;
 
 	virtual void render(system_interface&, layout_rect, uint16_t brush, rendering_modifiers display_flags = rendering_modifiers::none, bool in_focus = false) = 0;
 
@@ -641,7 +623,7 @@ public:
 	virtual void resume_keystroke_handling() = 0;
 
 	// SOUND FUNCTIONS
-	virtual sound_handle load_sound(native_string_view file_name) = 0;
+	virtual void  load_sound(sound_handle, native_string_view file_name) = 0;
 	virtual void play_sound(sound_handle) = 0;
 
 	// LOCALE FUNCTION
@@ -686,12 +668,6 @@ public:
 		return perform_substitutions(body_text, tr.data(), tr.size());
 	}
 
-	// from text services
-	virtual void on_text_change(ui_node*, uint32_t old_start, uint32_t old_end, uint32_t new_end) = 0;
-	virtual void on_selection_change(ui_node*) = 0;
-	virtual void set_focus(ui_node*) = 0;
-	virtual bool send_mouse_event_to_tso(ui_node* ts, int32_t x, int32_t y, uint32_t buttons) = 0;
-
 	// GRAPHICS FUNCTIONS
 	virtual void begin_rendering_pass() = 0;
 	virtual void end_rendering_pass() = 0;
@@ -716,9 +692,11 @@ public:
 	virtual void add_to_icon_slot(icon_handle slot, native_string_view file_name, em x_ems, em y_ems, int32_t sub_index) = 0;
 	virtual void add_svg_to_icon_slot(icon_handle slot, native_string_view file_name, em x_ems, em y_ems, int32_t sub_index) = 0;
 	virtual int32_t get_icon_set_size(icon_handle ico) = 0;
-
 	virtual void add_to_image_slot(image_handle slot, native_string_view file_name, em x_ems, em y_ems, int32_t sub_index) = 0;
 	virtual int32_t get_image_set_size(image_handle ico) = 0;
+
+	virtual void add_color_brush(uint16_t id, brush_color c, bool is_dark) = 0;
+	virtual void add_image_color_brush(uint16_t id, native_string_view file_name, brush_color c, bool is_dark) = 0;
 };
 
 namespace behavior {

@@ -14,6 +14,7 @@
 #include <chrono>
 #include <usp10.h>
 #include <msctf.h>
+#include "Dshow.h"
 
 namespace minui {
 
@@ -62,11 +63,11 @@ struct font_data {
 
 	font_data() { }
 	font_data(text::font&& f) : info(std::move(f)) { }
-	font_data(font_data&& o) : fallbacks(std::move(o.fallbacks)), info(std::move(o.info)) {
+	font_data(font_data&& o) noexcept : fallbacks(std::move(o.fallbacks)), info(std::move(o.info)) {
 		std::swap(fallback, o.fallback);
 		std::swap(format, o.format);
 	}
-	font_data& operator=(font_data&& o) {
+	font_data& operator=(font_data&& o) noexcept {
 		fallbacks = std::move(o.fallbacks);
 		info = std::move(o.info);
 		std::swap(fallback, o.fallback);
@@ -123,10 +124,12 @@ public:
 	uint16_t font_generation = 0;
 	int16_t starting_line = 0;
 	int16_t lines_used = 0;
+	int16_t single_line_width = 0;
 	text::content_alignment alignment;
 	text::font_handle font;
 	bool multiline = false;
 	bool requires_update = false;
+	bool requires_rerender = false;
 
 	dw_static_text_provider(ui_node& attached) : attached(attached) { }
 	~dw_static_text_provider() {
@@ -157,6 +160,9 @@ public:
 	int32_t get_number_of_text_lines(system_interface&) final;
 	int32_t get_starting_display_line() final;
 	void set_starting_display_line(int32_t v) final;
+	em get_single_line_width(system_interface&) final;
+	em get_line_height(system_interface&) final;
+	void resize_to_width(system_interface& s, int32_t w) final;
 
 	void render(system_interface&, layout_rect r, uint16_t brush, rendering_modifiers display_flags = rendering_modifiers::none, bool in_focus = false) final;
 
@@ -170,7 +176,7 @@ struct text_services_object;
 class dw_editable_text_provider : public editable_text_provider {
 	void prepare_selection_regions();
 	void update_cached_cursor_position();
-	void prepare_text(win_d2d_dw_ds& s, int32_t width);
+	void prepare_text(win_d2d_dw_ds& s);
 	void on_selection_change_ts(win_d2d_dw_ds& s);
 	void on_text_change_ts(win_d2d_dw_ds& s, uint32_t old_start, uint32_t old_end, uint32_t new_end);
 	void on_selection_change(win_d2d_dw_ds& s);
@@ -213,6 +219,7 @@ public:
 	uint16_t font_generation = 0;
 	int16_t starting_line = 0;
 	int16_t lines_used = 0;
+	int16_t single_line_width = 0;
 	text::content_alignment alignment;
 	text::font_handle font;
 	edit_contents internal_content_type = edit_contents::generic_text;
@@ -255,7 +262,10 @@ public:
 	int32_t get_number_of_displayed_lines(system_interface&) final;
 	int32_t get_number_of_text_lines(system_interface&) final;
 	int32_t get_starting_display_line() final;
+	em get_single_line_width(system_interface&) final;
 	void set_starting_display_line(int32_t v) final;
+	em get_line_height(system_interface&) final;
+	void resize_to_width(system_interface& s, int32_t w) final;
 
 	void render(system_interface&, layout_rect r, uint16_t brush, rendering_modifiers display_flags = rendering_modifiers::none, bool in_focus = false) final;
 
@@ -286,6 +296,7 @@ public:
 struct arrangement_result {
 	IDWriteTextLayout* ptr = nullptr;
 	int32_t lines_used = 0;
+	int32_t single_line_width = 0;
 };
 
 enum class edit_selection_mode : uint8_t {
@@ -317,9 +328,131 @@ struct undo_buffer {
 	void push_state(undo_item state);
 };
 
+struct icon_slot_item {
+	ID2D1Bitmap* icon_bitmap = nullptr;
+	ID2D1SvgDocument* doc = nullptr;
+
+	icon_slot_item() = default;
+	icon_slot_item(icon_slot_item const& o) = delete;
+	icon_slot_item(icon_slot_item&& o) noexcept {
+		icon_bitmap = o.icon_bitmap;
+		o.icon_bitmap = nullptr;
+		doc = o.doc;
+		o.doc = nullptr;
+	}
+	icon_slot_item& operator=(icon_slot_item&& o) noexcept {
+		std::swap(icon_bitmap, o.icon_bitmap);
+		std::swap(doc, o.doc);
+		return *this;
+	}
+	~icon_slot_item() {
+		safe_release(icon_bitmap);
+	}
+	void redraw(win_d2d_dw_ds& s);
+};
+
+struct icon_slot {
+	em x{ 100 };
+	em y{ 100 };
+	std::vector< icon_slot_item> sub_items;
+};
+
+struct brush_slot {
+	ID2D1Brush* brush = nullptr;
+	ID2D1Bitmap* brush_bitmap = nullptr;
+	brush_color color;
+	bool is_dark = false;
+
+	brush_slot() = default;
+	brush_slot(brush_slot const& o) = delete;
+	brush_slot(brush_slot&& o) noexcept {
+		brush = o.brush;
+		o.brush = nullptr;
+		brush_bitmap = o.brush_bitmap;
+		o.brush_bitmap = nullptr;
+		color = o.color;
+		is_dark = o.is_dark;
+	}
+	brush_slot& operator=(brush_slot&& o) noexcept {
+		std::swap(brush, o.brush);
+		std::swap(brush_bitmap, o.brush_bitmap);
+		color = o.color;
+		is_dark = o.is_dark;
+		return *this;
+	}
+	~brush_slot() {
+		safe_release(brush);
+		safe_release(brush_bitmap);
+	}
+};
+
+struct  sound_slot {
+	IGraphBuilder* graph_interface = nullptr;
+	IMediaControl* control_interface = nullptr;
+	IBasicAudio* audio_interface = nullptr;
+	IMediaSeeking* seek_interface = nullptr;
+	IMediaEventEx* event_interface = nullptr;
+
+	std::wstring filename;
+	float volume_multiplier = 1.0f;
+
+	sound_slot() {
+	}
+	sound_slot(std::wstring const& file) : filename(file) {
+	}
+	sound_slot(sound_slot const&) = delete;
+	sound_slot(sound_slot&& o) noexcept
+		: graph_interface(o.graph_interface), control_interface(o.control_interface),
+		audio_interface(o.audio_interface), seek_interface(o.seek_interface), event_interface(o.event_interface), filename(std::move(o.filename)),
+		volume_multiplier(o.volume_multiplier) {
+
+		o.graph_interface = nullptr;
+		o.control_interface = nullptr;
+		o.audio_interface = nullptr;
+		o.seek_interface = nullptr;
+		o.event_interface = nullptr;
+	}
+	sound_slot& operator=(sound_slot&& o) noexcept {
+		filename = std::move(o.filename);
+		volume_multiplier = o.volume_multiplier;
+
+		graph_interface = o.graph_interface;
+		control_interface = o.control_interface;
+		audio_interface = o.audio_interface;
+		seek_interface = o.seek_interface;
+		event_interface = o.event_interface;
+
+		o.graph_interface = nullptr;
+		o.control_interface = nullptr;
+		o.audio_interface = nullptr;
+		o.seek_interface = nullptr;
+		o.event_interface = nullptr;
+		return *this;
+	}
+	~sound_slot() {
+		if(event_interface) {
+			event_interface->SetNotifyWindow(NULL, 0, NULL);
+			event_interface = nullptr;
+		}
+
+		safe_release(graph_interface);
+		safe_release(control_interface);
+		safe_release(audio_interface);
+		safe_release(seek_interface);
+		safe_release(event_interface);
+	}
+
+	void set_file(std::wstring const& file) {
+		filename = file;
+	}
+};
+
 class win_d2d_dw_ds : public system_interface {
 public:
 	std::vector<font_data> font_collection;
+	std::vector<icon_slot> icon_collection;
+	std::vector<brush_slot> brush_collection;
+	std::vector< sound_slot> sound_collection;
 
 	locale_data_s locale_data;
 	text::backing_arrays text_data;
@@ -337,6 +470,8 @@ public:
 	int32_t client_x = 0;
 	int32_t client_y = 0;
 	bool left_to_right = true;
+
+	float sfx_volume_multiplier = 1.0f;
 
 	bool cursor_is_visible = true;
 	bool hide_window_elements = false;
@@ -377,6 +512,9 @@ public:
 	IDWriteRenderingParams3* rendering_params = nullptr;
 
 	ID2D1SolidColorBrush* solid_brush = nullptr;
+
+	ID2D1Factory6* d2d_factory = nullptr;
+	IWICImagingFactory* wic_factory = nullptr;
 
 	ITfThreadMgr* ts_manager_ptr = nullptr;
 	TfClientId ts_client_id = 0;
@@ -420,6 +558,8 @@ public:
 		safe_release(solid_brush);
 
 		safe_release(ts_manager_ptr);
+		safe_release(wic_factory);
+		safe_release(d2d_factory);
 	}
 
 	void create_window();
@@ -489,7 +629,7 @@ public:
 	void resume_keystroke_handling() final;
 
 	// SOUND FUNCTIONS
-	sound_handle load_sound(native_string_view file_name) final;
+	void  load_sound(sound_handle, native_string_view file_name) final;
 	void play_sound(sound_handle) final;
 
 	// LOCALE FUNCTION
@@ -517,12 +657,6 @@ public:
 	virtual text::formatted_text perform_substitutions(text::text_source body_text, text::text_source const* parameters, size_t parameter_count) final;
 	virtual text::variable get_text_variable(std::string_view name) final;
 
-	// from text services
-	void on_text_change(ui_node*, uint32_t old_start, uint32_t old_end, uint32_t new_end) final;
-	void on_selection_change(ui_node*)  final;
-	void set_focus(ui_node*) final;
-	bool send_mouse_event_to_tso(ui_node* ts, int32_t x, int32_t y, uint32_t buttons) final;
-
 	// GRAPHICS FUNCTIONS
 	void begin_rendering_pass() final;
 	void end_rendering_pass() final;
@@ -531,9 +665,9 @@ public:
 	void empty_rectangle(screen_space_rect content_rect, rendering_modifiers display_flags) final;
 	void line(screen_space_point start, screen_space_point end, float width, uint16_t brush) final;
 	void interactable(screen_space_point location, interactable_state state, uint16_t fg_brush, interactable_orientation o, rendering_modifiers display_flags = rendering_modifiers::none) final;
-	void image(image_handle img, screen_space_rect) final;
+	void image(image_handle img, screen_space_rect, int32_t sub_slot = 0) final;
 	void background(image_handle img, screen_space_rect, layout_rect interior, rendering_modifiers display_flags = rendering_modifiers::none) final;
-	void icon(icon_handle ico, screen_space_rect, uint16_t br, rendering_modifiers display_flags = rendering_modifiers::none) final;
+	void icon(icon_handle ico, screen_space_rect, uint16_t br, rendering_modifiers display_flags = rendering_modifiers::none, int32_t sub_slot = 0) final;
 	void set_line_highlight_mode(bool highlight_on) final;
 
 
@@ -544,9 +678,12 @@ public:
 	void register_in_place_animation() final;
 
 	layout_position get_icon_size(icon_handle ico) final;
-	icon_handle load_icon(char const* data, int32_t x_size, int32_t y_size, float edge_padding, em x_ems, em y_ems) final;
-	// todo: I would like my svg icons back
-	image_handle load_image(char const* data, int32_t x_size, int32_t y_size, int32_t channels) final;
+	void add_to_icon_slot(icon_handle slot, native_string_view file_name, em x_ems, em y_ems, int32_t sub_index) final;
+	void add_svg_to_icon_slot(icon_handle slot, native_string_view file_name, em x_ems, em y_ems, int32_t sub_index) final;
+	int32_t get_icon_set_size(icon_handle ico) final;
+
+	void add_color_brush(uint16_t id, brush_color c, bool is_dark) final;
+	void add_image_color_brush(uint16_t id, native_string_view file_name, brush_color c, bool is_dark) final;
 
 	friend LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 	friend class dw_static_text_provider;

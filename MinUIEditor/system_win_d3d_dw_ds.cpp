@@ -31,6 +31,7 @@
 #include <hidsdi.h>
 #include <hidpi.h>
 
+#pragma comment(lib, "Strmiids.lib")
 #pragma comment(lib, "Xinput.lib")
 #pragma comment(lib, "Xinput9_1_0.lib")
 #pragma comment(lib, "d2d1.lib")
@@ -40,6 +41,9 @@
 #pragma comment(lib, "Usp10.lib")
 #pragma comment(lib, "icu.lib")
 #pragma comment(lib, "Dwrite.lib")
+
+
+#define WM_GRAPHNOTIFY (WM_APP + 1)
 
 namespace minui {
 
@@ -386,8 +390,6 @@ void win_d2d_dw_ds::on_dpi_change(float new_dpi) {
 }
 
 void win_d2d_dw_ds::recreate_dpi_dependent_resource() {
-	resize_text();
-
 	safe_release(rendering_params);
 	assert(m_hwnd);
 
@@ -417,6 +419,50 @@ void win_d2d_dw_ds::recreate_dpi_dependent_resource() {
 		safe_release(rparams3);
 		safe_release(rparams);
 	}
+
+	resize_text();
+
+	for(auto& s : icon_collection) {
+		for(auto& i : s.sub_items) {
+			if(i.doc) {
+				safe_release(i.icon_bitmap);
+
+				auto hr = d2d_device_context->CreateBitmap(
+						D2D1_SIZE_U{
+							uint32_t(pixels_per_em * s.x.value / 100),
+							uint32_t(pixels_per_em * s.y.value / 100) },
+							nullptr, 0,
+							D2D1_BITMAP_PROPERTIES1{
+							D2D1::PixelFormat(DXGI_FORMAT_A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
+							dpi, dpi, D2D1_BITMAP_OPTIONS_TARGET, nullptr },
+							&(i.icon_bitmap));
+				
+
+				if(SUCCEEDED(hr)) {
+					d2d_device_context->BeginDraw();
+					d2d_device_context->SetTarget(i.icon_bitmap);
+					d2d_device_context->Clear(D2D1_COLOR_F{ 0.0f, 0.0f, 0.0f, 0.0f });
+
+					if(left_to_right) {
+						d2d_device_context->SetTransform(
+							D2D1::Matrix3x2F::Scale(float(pixels_per_em) / 10000.0f, float(pixels_per_em) / 10000.0f, D2D_POINT_2F{ 0.0f, 0.0f }));
+					} else {
+						d2d_device_context->SetTransform(
+							D2D1::Matrix3x2F::Translation(-float(s.x.value * 100), 0.0f) *
+							D2D1::Matrix3x2F::Scale(-float(pixels_per_em) / 10000.0f, float(pixels_per_em) / 10000.0f, D2D_POINT_2F{ 0.0f, 0.0f })
+						);
+					}
+
+					d2d_device_context->DrawSvgDocument(i.doc);
+					d2d_device_context->SetTransform(D2D1::Matrix3x2F::Identity());
+					d2d_device_context->SetTarget(nullptr);
+					d2d_device_context->EndDraw();
+				}
+			}
+		}
+	}
+
+	
 }
 void win_d2d_dw_ds::create_window_size_resources() {
 
@@ -1720,7 +1766,6 @@ arrangement_result win_d2d_dw_ds::create_text_arragement(text::formatted_text_re
 	text_format->SetOpticalAlignment(DWRITE_OPTICAL_ALIGNMENT_NO_SIDE_BEARINGS);
 	text_format->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, font_collection[font.id].info.line_spacing, font_collection[font.id].info.baseline);
 	
-
 	dwrite_factory->CreateTextLayout(text.text_content, text.text_length, text_format, max_width, font_collection[font.id].info.line_spacing, &formatted_text);
 
 	if(font_collection[font.id].info.is_oblique)
@@ -1731,6 +1776,7 @@ arrangement_result win_d2d_dw_ds::create_text_arragement(text::formatted_text_re
 	DWRITE_TEXT_METRICS text_metrics;
 	formatted_text->GetMetrics(&text_metrics);
 
+	result.single_line_width = int32_t(std::ceil((text_metrics.width)));
 
 	if(single_line || text_metrics.width <= max_width) {
 		formatted_text->SetMaxWidth(max_width);
@@ -1753,10 +1799,15 @@ arrangement_result win_d2d_dw_ds::create_text_arragement(text::formatted_text_re
 	return result;
 }
 
-void dw_static_text_provider::set_text(system_interface&, text::formatted_text&& t) {
+void dw_static_text_provider::set_text(system_interface& s, text::formatted_text&& t) {
 	if(internal_text.text_content != t.text_content) {
 		internal_text = std::move(t);
-		requires_update = true;
+
+		auto res = static_cast<win_d2d_dw_ds&>(s).create_text_arragement(internal_text, alignment, font, !multiline, std::max(10, displayed_x_size - 10));
+		safe_release(layout);
+		layout = res.ptr;
+		lines_used = int16_t(res.lines_used);
+		single_line_width = int16_t(res.single_line_width);
 	}
 }
 void dw_static_text_provider::set_alignment(system_interface&, text::content_alignment a) {
@@ -1782,10 +1833,58 @@ int32_t dw_static_text_provider::get_starting_display_line() {
 }
 void dw_static_text_provider::set_starting_display_line(int32_t v) {
 	starting_line = int16_t(v);
-	requires_update = true;
+	requires_rerender = true;
+}
+em dw_static_text_provider::get_single_line_width(system_interface& s) {
+	if(requires_update || !layout) {
+		auto res = static_cast<win_d2d_dw_ds&>(s).create_text_arragement(internal_text, alignment, font, !multiline, std::max(10, displayed_x_size - 10));
+		safe_release(layout);
+		layout = res.ptr;
+		lines_used = int16_t(res.lines_used);
+		single_line_width = int16_t(res.single_line_width);
+		requires_update = false;
+		requires_rerender = true;
+	}
+	s.to_ui_space(float(single_line_width));
+}
+em dw_static_text_provider::get_line_height(system_interface& a) {
+	return a.to_ui_space(static_cast<win_d2d_dw_ds&>(a).font_collection[font.id].info.line_spacing);
+}
+void dw_static_text_provider::resize_to_width(system_interface& s, int32_t w) {
+	if(w == displayed_x_size - 10 || !multiline)
+		return;
+
+	if(requires_update || !layout) {
+		auto res = static_cast<win_d2d_dw_ds&>(s).create_text_arragement(internal_text, alignment, font, !multiline, w);
+		safe_release(layout);
+		layout = res.ptr;
+		lines_used = int16_t(res.lines_used);
+		single_line_width = int16_t(res.single_line_width);
+		requires_update = false;
+		requires_rerender = true;
+	} else {
+		layout->SetMaxWidth(w);
+		layout->SetMaxHeight(float(1000 * static_cast<win_d2d_dw_ds&>(s).font_collection[font.id].info.line_spacing));
+
+		DWRITE_TEXT_METRICS text_metrics;
+		layout->GetMetrics(&text_metrics);
+		lines_used = int16_t(text_metrics.lineCount);
+		requires_rerender = true;
+	}
 }
 void dw_static_text_provider::render(system_interface& s, layout_rect r, uint16_t brush, rendering_modifiers display_flags, bool in_focus) {
 	auto node_size = s.to_screen_space(r);
+
+	if(language_generation != static_cast<win_d2d_dw_ds&>(s).language_generation) {
+		attached.on_reload(*(static_cast<win_d2d_dw_ds&>(s).minui_root));
+		language_generation = static_cast<win_d2d_dw_ds&>(s).language_generation;
+		font_generation = static_cast<win_d2d_dw_ds&>(s).font_generation;
+		requires_update = true;
+	} else if(font_generation != static_cast<win_d2d_dw_ds&>(s).font_generation) {
+		font_generation = static_cast<win_d2d_dw_ds&>(s).font_generation;
+		requires_update = true;
+	}
+
 	if(!cached_text || (node_size.width + 10) != displayed_x_size || node_size.height != displayed_y_size) {
 		// resize image_target
 		safe_release(cached_text);
@@ -1803,27 +1902,26 @@ void dw_static_text_provider::render(system_interface& s, layout_rect r, uint16_
 				nullptr },
 			&cached_text);
 
-		requires_update = true;
+		requires_rerender = true;
 		displayed_x_size = node_size.width + 10;
 		displayed_y_size = node_size.height;
+
+		if(layout && !requires_update) {
+			layout->SetMaxWidth(node_size.width);
+			layout->SetMaxHeight(node_size.height);
+		}
 	}
-	if(language_generation != static_cast<win_d2d_dw_ds&>(s).language_generation) {
-		attached.on_reload(*(static_cast<win_d2d_dw_ds&>(s).minui_root));
-		language_generation = static_cast<win_d2d_dw_ds&>(s).language_generation;
-		font_generation = static_cast<win_d2d_dw_ds&>(s).font_generation;
-		requires_update = true;
-	} else if(font_generation != static_cast<win_d2d_dw_ds&>(s).font_generation) {
-		font_generation = static_cast<win_d2d_dw_ds&>(s).font_generation;
-		requires_update = true;
-	}
+	
 
 	if(requires_update) {
 		auto res = static_cast<win_d2d_dw_ds&>(s).create_text_arragement(internal_text, alignment, font, !multiline, node_size.width);
 		safe_release(layout);
 		layout = res.ptr;
 		lines_used = int16_t(res.lines_used);
+		single_line_width = int16_t(res.single_line_width);
+	}
 
-
+	if(requires_rerender) {
 		ID2D1Image* old_target = nullptr;
 		static_cast<win_d2d_dw_ds&>(s).d2d_device_context->GetTarget(&old_target);
 
@@ -1846,6 +1944,7 @@ void dw_static_text_provider::render(system_interface& s, layout_rect r, uint16_
 		safe_release(old_target);
 	}
 
+	requires_rerender = false;
 	requires_update = false;
 
 	// blit cached text to screen
@@ -2262,10 +2361,11 @@ bool analysis_object::is_word_position(int32_t position) {
 }
 
 
-void dw_editable_text_provider::set_text(system_interface&, text::formatted_text&& t) {
+void dw_editable_text_provider::set_text(system_interface& s, text::formatted_text&& t) {
 	if(internal_text != t.text_content) {
 		internal_text = std::move(t.text_content);
 		requires_update = true;
+		prepare_text(static_cast<win_d2d_dw_ds&>(s));
 	}
 }
 void dw_editable_text_provider::set_alignment(system_interface&, text::content_alignment a) {
@@ -2476,6 +2576,17 @@ void dw_editable_text_provider::prepare_selection_regions() {
 }
 void dw_editable_text_provider::render(system_interface& s, layout_rect r, uint16_t brush, rendering_modifiers display_flags, bool in_focus) {
 	auto node_size = s.to_screen_space(r);
+
+	if(language_generation != static_cast<win_d2d_dw_ds&>(s).language_generation) {
+		attached.on_reload(*(static_cast<win_d2d_dw_ds&>(s).minui_root));
+		language_generation = static_cast<win_d2d_dw_ds&>(s).language_generation;
+		font_generation = static_cast<win_d2d_dw_ds&>(s).font_generation;
+		requires_update = true;
+	} else if(font_generation != static_cast<win_d2d_dw_ds&>(s).font_generation) {
+		font_generation = static_cast<win_d2d_dw_ds&>(s).font_generation;
+		requires_update = true;
+	}
+
 	if(!cached_text || (node_size.width + 10) != displayed_x_size || node_size.height != displayed_y_size) {
 		// resize image_target
 		safe_release(cached_text);
@@ -2493,21 +2604,17 @@ void dw_editable_text_provider::render(system_interface& s, layout_rect r, uint1
 			nullptr },
 			&cached_text);
 
-		requires_update = true;
+		render_out_of_date = true;
 		displayed_x_size = node_size.width + 10;
 		displayed_y_size = node_size.height;
-	}
-	if(language_generation != static_cast<win_d2d_dw_ds&>(s).language_generation) {
-		attached.on_reload(*(static_cast<win_d2d_dw_ds&>(s).minui_root));
-		language_generation = static_cast<win_d2d_dw_ds&>(s).language_generation;
-		font_generation = static_cast<win_d2d_dw_ds&>(s).font_generation;
-		requires_update = true;
-	} else if(font_generation != static_cast<win_d2d_dw_ds&>(s).font_generation) {
-		font_generation = static_cast<win_d2d_dw_ds&>(s).font_generation;
-		requires_update = true;
+		if(layout && !requires_update) {
+			layout->SetMaxWidth(node_size.width);
+			layout->SetMaxHeight(node_size.height);
+			analysis.update_analyzed_text(layout, internal_text, static_cast<win_d2d_dw_ds&>(s).left_to_right, static_cast<win_d2d_dw_ds&>(s));
+		}
 	}
 
-	prepare_text(static_cast<win_d2d_dw_ds&>(s), node_size.width);
+	prepare_text(static_cast<win_d2d_dw_ds&>(s));
 
 	if(render_out_of_date) {
 		ID2D1Image* old_target = nullptr;
@@ -2668,8 +2775,18 @@ istatic_text::mouse_test_result dw_editable_text_provider::get_position(system_i
 
 	return istatic_text::mouse_test_result{ ht.textPosition, ht.length, is_inside == TRUE, is_trailing == TRUE };
 }
-void dw_editable_text_provider::prepare_text(win_d2d_dw_ds& s, int32_t width) {
-	if(requires_update) {
+em dw_editable_text_provider::get_single_line_width(system_interface& s) {
+	prepare_text(static_cast<win_d2d_dw_ds & >(s));
+	return s.to_ui_space(float(single_line_width));
+}
+em dw_editable_text_provider::get_line_height(system_interface& a) {
+	return a.to_ui_space(static_cast<win_d2d_dw_ds&>(a).font_collection[font.id].info.line_spacing);
+}
+void dw_editable_text_provider::resize_to_width(system_interface& s, int32_t w) {
+	if(w == displayed_x_size - 10 || !multiline)
+		return;
+
+	if(requires_update || !layout) {
 		text::formatted_text temp;
 		temp.text_content = internal_text;
 
@@ -2681,10 +2798,46 @@ void dw_editable_text_provider::prepare_text(win_d2d_dw_ds& s, int32_t width) {
 		if(temp.text_content.length() > 0 && text::codepoint_is_space(temp.text_content.back()))
 			temp.text_content += wchar_t(0x200C);
 
-		auto res = static_cast<win_d2d_dw_ds&>(s).create_text_arragement(temp, alignment, font, !multiline, width);
+		auto res = static_cast<win_d2d_dw_ds&>(s).create_text_arragement(temp, alignment, font, !multiline, w);
 		safe_release(layout);
 		layout = res.ptr;
 		lines_used = int16_t(res.lines_used);
+		single_line_width = int16_t(res.single_line_width);
+
+		analysis.update_analyzed_text(layout, internal_text, static_cast<win_d2d_dw_ds&>(s).left_to_right, static_cast<win_d2d_dw_ds&>(s));
+
+		requires_update = false;
+		render_out_of_date = true;
+	} else {
+		layout->SetMaxWidth(w);
+		layout->SetMaxHeight(float(1000 * static_cast<win_d2d_dw_ds&>(s).font_collection[font.id].info.line_spacing));
+
+		DWRITE_TEXT_METRICS text_metrics;
+		layout->GetMetrics(&text_metrics);
+		lines_used = int16_t(text_metrics.lineCount);
+
+		analysis.update_analyzed_text(layout, internal_text, static_cast<win_d2d_dw_ds&>(s).left_to_right, static_cast<win_d2d_dw_ds&>(s));
+		render_out_of_date = true;
+	}
+}
+void dw_editable_text_provider::prepare_text(win_d2d_dw_ds& s) {
+	if(requires_update || !layout) {
+		text::formatted_text temp;
+		temp.text_content = internal_text;
+
+		// if the text ends in a space, a zero-width non joiner is placed at the end
+		// this "fixes" direct-write's problem of ignoring spaces for alignment
+		// UNRESOLVED: there may still be problems if the text is left-aligned and begins
+		// with a space. A zero width could be prefixed as well, but we would have to adjust
+		// for this in the hit-testing logic as well
+		if(temp.text_content.length() > 0 && text::codepoint_is_space(temp.text_content.back()))
+			temp.text_content += wchar_t(0x200C);
+
+		auto res = static_cast<win_d2d_dw_ds&>(s).create_text_arragement(temp, alignment, font, !multiline, std::max(10, displayed_x_size - 10));
+		safe_release(layout);
+		layout = res.ptr;
+		lines_used = int16_t(res.lines_used);
+		single_line_width = int16_t(res.single_line_width);
 
 		analysis.update_analyzed_text(layout, internal_text, static_cast<win_d2d_dw_ds&>(s).left_to_right, static_cast<win_d2d_dw_ds&>(s));
 
@@ -2714,7 +2867,7 @@ void dw_editable_text_provider::on_text_change(win_d2d_dw_ds& win) {
 	selection_out_of_date = true;
 	changes_made = true;
 
-	prepare_text(win, win.to_screen_space(attached.position).width);
+	prepare_text(win);
 
 	/*
 	// TODO accessibility notifications
@@ -2757,7 +2910,7 @@ void dw_editable_text_provider::on_selection_change(win_d2d_dw_ds& s) {
 }
 uint32_t dw_editable_text_provider::position_visually_above(win_d2d_dw_ds& s, uint32_t v) {
 	auto width = s.to_screen_space(attached.position.width);
-	prepare_text(s, width);
+	prepare_text(s);
 
 	auto current_line = analysis.line_of_position(int32_t(v));
 	if(current_line == 0)
@@ -2851,7 +3004,7 @@ uint32_t dw_editable_text_provider::position_visually_above(win_d2d_dw_ds& s, ui
 }
 uint32_t dw_editable_text_provider::position_visually_below(win_d2d_dw_ds& s, uint32_t v) {
 	auto width = s.to_screen_space(attached.position.width);
-	prepare_text(s, width);
+	prepare_text(s);
 
 	auto current_line = analysis.line_of_position(int32_t(v));
 	if(current_line >= analysis.number_of_lines() - 1)
@@ -3566,7 +3719,7 @@ void dw_editable_text_provider::get_range_bounds(win_d2d_dw_ds& win, uint32_t po
 	auto selection_start = std::min(position_start, position_end);
 	auto selection_end = std::max(position_start, position_end);
 
-	prepare_text(win, win.to_screen_space(attached.position.width));
+	prepare_text(win);
 	
 	uint32_t metrics_size = 0;
 	layout->HitTestTextRange(selection_start, selection_end - selection_start, 0, 0, nullptr, 0, &metrics_size);
@@ -4573,6 +4726,9 @@ void undo_buffer::push_state(undo_item state) {
 void win_d2d_dw_ds::create_window() {
 	// todo: coinitialize
 
+	D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &d2d_factory);
+	CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_IWICImagingFactory, reinterpret_cast<void**>(&wic_factory));
+
 	CoCreateInstance(CLSID_TF_ThreadMgr, NULL, CLSCTX_INPROC_SERVER, IID_ITfThreadMgr, (void**)&ts_manager_ptr);
 	ts_manager_ptr->Activate(&ts_client_id);
 
@@ -4580,6 +4736,288 @@ void win_d2d_dw_ds::create_window() {
 	// run message loop
 
 	ts_manager_ptr->Deactivate();
+}
+
+layout_position win_d2d_dw_ds::get_icon_size(icon_handle ico) {
+	if(0 <= ico.value && size_t(ico.value) <= icon_collection.size()) {
+		return layout_position{ icon_collection[ico.value].x, icon_collection[ico.value].y };
+	} else {
+		return layout_position{ em{ 0 }, em{ 0 } };
+	}
+}
+void win_d2d_dw_ds::add_to_icon_slot(icon_handle slot, native_string_view file_name, em x_ems, em y_ems, int32_t sub_index) {
+	if(0 > slot.value || 0 > sub_index) {
+		return;
+	}
+	if(size_t(slot.value) >= icon_collection.size()) {
+		icon_collection.resize(size_t(slot.value) + 1);
+	}
+	if(size_t(sub_index) >= icon_collection[slot.value].sub_items.size()) {
+		icon_collection[slot.value].sub_items.resize(size_t(sub_index) + 1);
+	}
+	icon_collection[slot.value].x = std::max(icon_collection[slot.value].x, x_ems);
+	icon_collection[slot.value].y = std::max(icon_collection[slot.value].y, y_ems);
+
+	auto& i = icon_collection[slot.value].sub_items[sub_index];
+	safe_release(i.doc);
+	safe_release(i.icon_bitmap);
+
+	IWICBitmapDecoder* pDecoder = nullptr;
+	IWICBitmapFrameDecode* pSource = nullptr;
+	IWICFormatConverter* pConverter = nullptr;
+
+	native_string fn = native_string{ file_name };
+	auto hr = wic_factory->CreateDecoderFromFilename(fn.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, &pDecoder);
+	
+	if(SUCCEEDED(hr)) {
+		hr = pDecoder->GetFrame(0, &pSource);
+	}
+	if(SUCCEEDED(hr)) {
+		hr = wic_factory->CreateFormatConverter(&pConverter);
+	}
+	if(SUCCEEDED(hr)) {
+		hr = pConverter->Initialize(
+			pSource, GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone,
+			nullptr, 0.f, WICBitmapPaletteTypeMedianCut);
+	}
+	if(SUCCEEDED(hr)) {
+		hr = d2d_device_context->CreateBitmapFromWicBitmap(pConverter, nullptr, &(i.icon_bitmap));
+	}
+
+	safe_release(pDecoder);
+	safe_release(pSource);
+	safe_release(pConverter);
+}
+void win_d2d_dw_ds::add_svg_to_icon_slot(icon_handle slot, native_string_view file_name, em x_ems, em y_ems, int32_t sub_index) {
+	if(0 > slot.value || 0 > sub_index) {
+		return;
+	}
+	if(size_t(slot.value) >= icon_collection.size()) {
+		icon_collection.resize(size_t(slot.value) + 1);
+	}
+	if(size_t(sub_index) >= icon_collection[slot.value].sub_items.size()) {
+		icon_collection[slot.value].sub_items.resize(size_t(sub_index) + 1);
+	}
+	icon_collection[slot.value].x = std::max(icon_collection[slot.value].x, x_ems);
+	icon_collection[slot.value].y = std::max(icon_collection[slot.value].y, y_ems);
+
+	auto& i = icon_collection[slot.value].sub_items[sub_index];
+	safe_release(i.doc);
+	safe_release(i.icon_bitmap);
+
+	IStream* fstream = nullptr;
+
+	native_string fn = native_string{ file_name };
+	HRESULT hr = SHCreateStreamOnFileW(fn.c_str(), STGM_READ | STGM_SHARE_DENY_WRITE, &fstream);
+
+	if(SUCCEEDED(hr)) {
+		hr = d2d_device_context->CreateSvgDocument(fstream,
+			D2D1_SIZE_F{ float(icon_collection[slot.value].x.value * 100), float(icon_collection[slot.value].y.value * 100) }, &(i.doc));
+
+	}
+	if(SUCCEEDED(hr)) {
+		hr = d2d_device_context->CreateBitmap(
+			D2D1_SIZE_U{
+				uint32_t(pixels_per_em * icon_collection[slot.value].x.value / 100),
+				uint32_t(pixels_per_em * icon_collection[slot.value].y.value / 100) },
+			nullptr, 0,
+			D2D1_BITMAP_PROPERTIES1{
+				D2D1::PixelFormat(DXGI_FORMAT_A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
+				dpi, dpi, D2D1_BITMAP_OPTIONS_TARGET, nullptr },
+				&(i.icon_bitmap));
+	}
+
+	if(SUCCEEDED(hr)) {
+		d2d_device_context->BeginDraw();
+		d2d_device_context->SetTarget(i.icon_bitmap);
+		d2d_device_context->Clear(D2D1_COLOR_F{ 0.0f, 0.0f, 0.0f, 0.0f });
+
+		if(left_to_right) {
+			d2d_device_context->SetTransform(
+				D2D1::Matrix3x2F::Scale(float(pixels_per_em) / 10000.0f, float(pixels_per_em) / 10000.0f, D2D_POINT_2F{ 0.0f, 0.0f }));
+		} else {
+			d2d_device_context->SetTransform(
+				D2D1::Matrix3x2F::Translation( -float(icon_collection[slot.value].x.value * 100), 0.0f) *
+				D2D1::Matrix3x2F::Scale(- float(pixels_per_em) / 10000.0f, float(pixels_per_em) / 10000.0f, D2D_POINT_2F{ 0.0f, 0.0f })
+			);
+		}
+
+		d2d_device_context->DrawSvgDocument(i.doc);
+		d2d_device_context->SetTransform(D2D1::Matrix3x2F::Identity());
+		d2d_device_context->SetTarget(nullptr);
+		d2d_device_context->EndDraw();
+	}
+
+	safe_release(fstream);
+}
+int32_t win_d2d_dw_ds::get_icon_set_size(icon_handle ico) {
+	if(0 <= ico.value && size_t(ico.value) <= icon_collection.size()) {
+		return int32_t(icon_collection[ico.value].sub_items.size());
+	} else {
+		return 0;
+	}
+}
+
+void win_d2d_dw_ds::add_color_brush(uint16_t id, brush_color c, bool is_dark) {
+	if(id >= brush_collection.size()) {
+		brush_collection.resize(id + 1);
+	}
+	safe_release(brush_collection[id].brush);
+	safe_release(brush_collection[id].brush_bitmap);
+
+	brush_collection[id].color = c;
+	brush_collection[id].is_dark = is_dark;
+
+	ID2D1SolidColorBrush* t;
+	d2d_device_context->CreateSolidColorBrush(D2D1::ColorF(c.r, c.g, c.b, c.a), &t);
+	brush_collection[id].brush = t;
+}
+void win_d2d_dw_ds::add_image_color_brush(uint16_t id, native_string_view file_name, brush_color c, bool is_dark) {
+	if(id >= brush_collection.size()) {
+		brush_collection.resize(id + 1);
+	}
+	safe_release(brush_collection[id].brush);
+	safe_release(brush_collection[id].brush_bitmap);
+
+	brush_collection[id].color = c;
+	brush_collection[id].is_dark = is_dark;
+
+	IWICBitmapDecoder* pDecoder = nullptr;
+	IWICBitmapFrameDecode* pSource = nullptr;
+	IWICFormatConverter* pConverter = nullptr;
+	IWICBitmapScaler* pScaler = nullptr;
+	ID2D1BitmapBrush* t = nullptr;
+
+	native_string fn = native_string{ file_name };
+	auto hr = wic_factory->CreateDecoderFromFilename(fn.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, &pDecoder);
+	
+	if(SUCCEEDED(hr)) {
+		hr = pDecoder->GetFrame(0, &pSource);
+	}
+	if(SUCCEEDED(hr)) {
+		hr = wic_factory->CreateFormatConverter(&pConverter);
+	}
+	if(SUCCEEDED(hr)) {
+		hr = pConverter->Initialize(
+			pSource, GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone,
+			nullptr, 0.f, WICBitmapPaletteTypeMedianCut);
+	}
+	if(SUCCEEDED(hr)) {
+		hr = d2d_device_context->CreateBitmapFromWicBitmap(pConverter, nullptr, &brush_collection[id].brush_bitmap);
+	}
+	if(SUCCEEDED(hr)) {
+		hr = d2d_device_context->CreateBitmapBrush(brush_collection[id].brush_bitmap, &t);
+	}
+	if(SUCCEEDED(hr)) {
+		t->SetExtendModeX(D2D1_EXTEND_MODE_WRAP);
+		t->SetExtendModeY(D2D1_EXTEND_MODE_WRAP);
+		brush_collection[id].brush = t;
+	} else {
+		ID2D1SolidColorBrush* t2;
+		d2d_device_context->CreateSolidColorBrush(D2D1::ColorF(c.r, c.g, c.b, c.a), &t2);
+		brush_collection[id].brush = t2;
+	}
+
+	safe_release(pDecoder);
+	safe_release(pSource);
+	safe_release(pConverter);
+	safe_release(pScaler);
+}
+
+void win_d2d_dw_ds::load_sound(sound_handle h, native_string_view file_name) {
+	if(h.value < 0)
+		return;
+	if(size_t(h.value) >= sound_collection.size()) {
+		sound_collection.resize(h.value + 1);
+	}
+	sound_collection[h.value].filename = native_string{ file_name };
+}
+
+constexpr int32_t volume_function(float v) {
+	return std::clamp(int32_t((v + -1.0f) * 4'500.0f), -10'000, 0);
+}
+
+void win_d2d_dw_ds::play_sound(sound_handle h) {
+	if(h.value < 0)
+		return;
+
+	if(sound_collection[h.value].volume_multiplier == 0.0f || sound_collection[h.value].filename.size() == 0)
+		return;
+
+	if(!sound_collection[h.value].graph_interface) {
+
+		HRESULT hr = CoCreateInstance(CLSID_FilterGraph, nullptr, CLSCTX_INPROC_SERVER, IID_IGraphBuilder, (void**)&(sound_collection[h.value].graph_interface));
+		if(FAILED(hr)) {
+			sound_collection[h.value].volume_multiplier = 0.0f;
+			return;
+		}
+
+		
+		HRESULT hr = sound_collection[h.value].graph_interface->RenderFile((wchar_t const*)(sound_collection[h.value].filename.c_str()), nullptr);
+		if(FAILED(hr)) {
+			sound_collection[h.value].volume_multiplier = 0.0f;
+			return;
+		}
+
+		hr = sound_collection[h.value].graph_interface->QueryInterface(IID_IMediaControl, (void**)&(sound_collection[h.value].control_interface));
+
+		if(FAILED(hr)) {
+			sound_collection[h.value].volume_multiplier = 0.0f;
+			return;
+		}
+
+		hr = sound_collection[h.value].graph_interface->QueryInterface(IID_IBasicAudio, (void**)&(sound_collection[h.value].audio_interface));
+
+		if(FAILED(hr)) {
+			sound_collection[h.value].volume_multiplier = 0.0f;
+			return;
+		}
+
+		hr = sound_collection[h.value].graph_interface->QueryInterface(IID_IMediaSeeking, (void**)&(sound_collection[h.value].seek_interface));
+
+		if(FAILED(hr)) {
+			sound_collection[h.value].volume_multiplier = 0.0f;
+			return;
+		}
+
+
+		hr = sound_collection[h.value].audio_interface->put_Volume(volume_function(sfx_volume_multiplier * sound_collection[h.value].volume_multiplier));
+		if(FAILED(hr)) {
+			MessageBoxW(nullptr, L"failed to put_Volume", L"Audio error", MB_OK);
+		}
+
+		LONGLONG new_position = 0;
+		hr = sound_collection[h.value].seek_interface->SetPositions(&new_position, AM_SEEKING_AbsolutePositioning, nullptr, AM_SEEKING_NoPositioning);
+		if(FAILED(hr)) {
+			
+		}
+		hr = sound_collection[h.value].control_interface->Run();
+		if(FAILED(hr)) {
+			
+		}
+	} else {
+		HRESULT hr;
+		if(sound_collection[h.value].audio_interface) {
+			hr = sound_collection[h.value].audio_interface->put_Volume(volume_function(sfx_volume_multiplier * sound_collection[h.value].volume_multiplier));
+			if(FAILED(hr)) {
+
+			}
+		}
+		if(sound_collection[h.value].seek_interface) {
+			LONGLONG new_position = 0;
+			hr = sound_collection[h.value].seek_interface->SetPositions(&new_position, AM_SEEKING_AbsolutePositioning, nullptr, AM_SEEKING_NoPositioning);
+			if(FAILED(hr)) {
+				
+			}
+		}
+
+		if(sound_collection[h.value].control_interface) {
+			hr = sound_collection[h.value].control_interface->Run();
+			if(FAILED(hr)) {
+				
+			}
+		}
+	}
 }
 
 }

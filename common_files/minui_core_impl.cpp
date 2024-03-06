@@ -723,8 +723,6 @@ public:
 	bool on_mouse_scroll(float amount);
 	bool on_key_down(uint32_t scancode, uint32_t vk_code, bool repeat);
 	bool on_key_up(uint32_t scancode, uint32_t vk_code);
-	void on_window_focus(); // hide/show edit cursor
-	void on_window_kill_focus();
 	void on_update();
 
 	bool contains_focus(ui_node const*);
@@ -1091,6 +1089,34 @@ void root::change_focus(ui_node* old_focus, ui_node* new_focus) {
 	interactables_out_of_date = true;
 }
 
+bool root::contains_focus(ui_node const* n) {
+	auto tf = top_focus(focus_stack);
+	while(tf != nullptr) {
+		if(tf == n)
+			return true;
+		tf = tf->parent;
+	}
+	return false;
+}
+void root::back_out_focus(ui_node& n) {
+	if(!contains_focus(&n)) {
+		return;
+	}
+
+	while(!focus_stack.empty()) {
+		if(contains_focus(&n)) {
+			if(top_focus(focus_stack) == &n)
+				return;
+			take_key_action(go_up{ });
+		} else {
+			set_window_focus(focus_tracker{ &n, -1, -1 });
+			return;
+		}
+	}
+
+	set_window_focus(focus_tracker{ &n, -1, -1 });
+}
+
 struct sub_items_iterator {
 	struct node_position {
 		ui_node const* n;
@@ -1446,7 +1472,10 @@ void root::set_window_focus(focus_tracker r) {
 	if(r.node == nullptr) {
 		change_focus(focus_id, nullptr);
 		focus_stack.clear();
-		repopulate_key_actions();
+		if(!node_repository.empty()) {
+			current_groupings_size = make_top_groups(*this, *(node_repository[0].get()), current_focus_groupings.data());
+			repopulate_key_actions();
+		}
 		return;
 	}
 
@@ -3124,6 +3153,7 @@ void dynamic_column::add_managed_element(root& r, ui_node* n) {
 	pending_relayout = true;
 }
 void dynamic_column::reset_managed_elements(root& r) {
+	r.back_out_focus(*this);
 	for(auto c : children)
 		r.release_node(c);
 	children.clear();
@@ -4155,6 +4185,7 @@ void dynamic_grid::add_managed_element(root& r, ui_node* n) {
 	pending_relayout = true;
 }
 void dynamic_grid::reset_managed_elements(root& r) {
+	r.back_out_focus(*this);
 	for(auto c : children)
 		r.release_node(c);
 	children.clear();
@@ -4228,31 +4259,33 @@ void static_text::force_resize(root& r, layout_position size) {
 }
 void static_text::resize(root& r, layout_position maximum_space, em desired_width, em desired_height) {
 	auto data = r.get_text_information(ui_node::type_id);
-	auto text_bounds = text_data->single_line_bounds(r.system);
+	auto lh = text_data->get_line_height(r.system);
 
 	if(data.multiline) {
-		desired_height = std::min(std::max(desired_height, r.system.to_ui_space(float(text_bounds.y))), maximum_space.y);
 		desired_width = std::min(std::max(desired_width, data.margins.x + data.margins.width + data.minimum_space), maximum_space.x);
+		text_data->resize_to_width(r.system.to_screen_space(desired_width - (data.margins.x + data.margins.width)));
+		desired_height = std::max(desired_height, lh * std::max(1, text_data->get_number_of_text_lines(r.system)));
 	} else {
-		desired_height = std::min(std::max(desired_height, r.system.to_ui_space(float(text_bounds.y))), maximum_space.y);
-		desired_width = std::min(std::max(desired_width, std::max(r.system.to_ui_space(float(text_bounds.x)), data.minimum_space) + data.margins.x + data.margins.width), maximum_space.x);
+		auto text_bounds = text_data->get_single_line_width(r.system);
+		desired_height = std::max(desired_height, lh);
+		desired_width = std::min(std::max(desired_width, std::max(text_bounds, data.minimum_space) + data.margins.x + data.margins.width), maximum_space.x);
 	}
 
 	force_resize(r, layout_position{ desired_width, desired_height });
 }
 em static_text::minimum_width(root& r) {
 	auto data = r.get_text_information(ui_node::type_id);
-	auto text_bounds = text_data->single_line_bounds(r.system);
+	auto text_bounds = text_data->get_single_line_width(r.system);
 
 	if(data.multiline) {
 		return (data.margins.x + data.margins.width + data.minimum_space);
 	} else {
-		return std::max(r.system.to_ui_space(float(text_bounds.x)), data.minimum_space) + data.margins.x + data.margins.width;
+		return std::max(text_bounds, data.minimum_space) + data.margins.x + data.margins.width;
 	}
 }
 em static_text::minimum_height(root& r) {
-	auto text_bounds = text_data->single_line_bounds(r.system);
-	return r.system.to_ui_space(float(text_bounds.y));
+	auto lh = text_data->get_line_height(r.system);
+	return lh * std::max(1, text_data->get_number_of_text_lines(r.system));
 }
 
 //
@@ -4346,31 +4379,34 @@ void text_button::force_resize(root& r, layout_position size) {
 }
 void text_button::resize(root& r, layout_position maximum_space, em desired_width, em desired_height) {
 	auto data = r.get_text_information(ui_node::type_id);
-	auto text_bounds = text_data->single_line_bounds(r.system);
+	auto lh = text_data->get_line_height(r.system);
 
 	if(data.multiline) {
-		desired_height = std::min(std::max(desired_height, r.system.to_ui_space(float(text_bounds.y))), maximum_space.y);
 		desired_width = std::min(std::max(desired_width, data.margins.x + data.margins.width + data.minimum_space), maximum_space.x);
+		text_data->resize_to_width(r.system.to_screen_space(desired_width - (data.margins.x + data.margins.width)));
+		desired_height = std::max(desired_height, lh * std::max(1, text_data->get_number_of_text_lines(r.system)));
 	} else {
-		desired_height = std::min(std::max(desired_height, r.system.to_ui_space(float(text_bounds.y))), maximum_space.y);
-		desired_width = std::min(std::max(desired_width, std::max(r.system.to_ui_space(float(text_bounds.x)), data.minimum_space) + data.margins.x + data.margins.width), maximum_space.x);
+		auto text_bounds = text_data->get_single_line_width(r.system);
+		desired_height =std::max(desired_height, lh);
+		desired_width = std::min(std::max(desired_width, std::max(text_bounds, data.minimum_space) + data.margins.x + data.margins.width), maximum_space.x);
 	}
 
 	force_resize(r, layout_position{ desired_width, desired_height });
 }
 em text_button::minimum_width(root& r) {
 	auto data = r.get_text_information(ui_node::type_id);
-	auto text_bounds = text_data->single_line_bounds(r.system);
+	
 
 	if(data.multiline) {
 		return (data.margins.x + data.margins.width + data.minimum_space);
 	} else {
-		return std::max(r.system.to_ui_space(float(text_bounds.x)), data.minimum_space) + data.margins.x + data.margins.width;
+		auto text_bounds = text_data->get_single_line_width(r.system);
+		return std::max(text_bounds, data.minimum_space) + data.margins.x + data.margins.width;
 	}
 }
 em text_button::minimum_height(root& r) {
-	auto text_bounds = text_data->single_line_bounds(r.system);
-	return r.system.to_ui_space(float(text_bounds.y));
+	auto lh = text_data->get_line_height(r.system);
+	return lh * std::max(1, text_data->get_number_of_text_lines(r.system));
 }
 void text_button::on_lbutton(root& r, layout_position pos) {
 	if(auto fn = r.get_user_mouse_fn_a(ui_node::type_id); fn && enabled) {
@@ -4625,31 +4661,33 @@ void edit_control::force_resize(root& r, layout_position size) {
 }
 void edit_control::resize(root& r, layout_position maximum_space, em desired_width, em desired_height) {
 	auto data = r.get_text_information(ui_node::type_id);
-	auto text_bounds = text_data->single_line_bounds(r.system);
+	auto lh = text_data->get_line_height(r.system);
 
 	if(data.multiline) {
-		desired_height = std::min(std::max(desired_height, r.system.to_ui_space(float(text_bounds.y))), maximum_space.y);
 		desired_width = std::min(std::max(desired_width, data.margins.x + data.margins.width + data.minimum_space), maximum_space.x);
+		text_data->resize_to_width(r.system.to_screen_space(desired_width - (data.margins.x + data.margins.width)));
+		desired_height = std::max(desired_height, lh * std::max(1, text_data->get_number_of_text_lines(r.system)));
 	} else {
-		desired_height = std::min(std::max(desired_height, r.system.to_ui_space(float(text_bounds.y))), maximum_space.y);
-		desired_width = std::min(std::max(desired_width, std::max(r.system.to_ui_space(float(text_bounds.x)), data.minimum_space) + data.margins.x + data.margins.width), maximum_space.x);
+		auto text_bounds = text_data->get_single_line_width(r.system);
+		desired_height = std::max(desired_height, lh);
+		desired_width = std::min(std::max(desired_width, text_bounds), data.minimum_space) + data.margins.x + data.margins.width), maximum_space.x);
 	}
 
 	force_resize(r, layout_position{ desired_width, desired_height });
 }
 em edit_control::minimum_width(root& r) {
 	auto data = r.get_text_information(ui_node::type_id);
-	auto text_bounds = text_data->single_line_bounds(r.system);
 
 	if(data.multiline) {
 		return (data.margins.x + data.margins.width + data.minimum_space);
 	} else {
-		return std::max(r.system.to_ui_space(float(text_bounds.x)), data.minimum_space) + data.margins.x + data.margins.width;
+		auto text_bounds = text_data->get_single_line_width(r.system);
+		return std::max(text_bounds, data.minimum_space) + data.margins.x + data.margins.width;
 	}
 }
 em edit_control::minimum_height(root& r) {
-	auto text_bounds = text_data->single_line_bounds(r.system);
-	return r.system.to_ui_space(float(text_bounds.y));
+	auto lh = text_data->get_line_height(r.system);
+	return lh * std::max(1, text_data->get_number_of_text_lines(r.system));
 }
 
 /*
@@ -4805,17 +4843,13 @@ bool root::on_mouse_move(layout_position p) {
 		if(!focus_stack.empty()) {
 			auto fe = focus_stack.back().l_interface;
 			old_focus = fe;
-			auto ei = fe->get_interface(minui::iface::editable_text);
-			if(ei) {
-				auto edit = static_cast<ieditable_text*>(ei);
-				auto abs_position = workspace_placement(*fe);
-				edit->on_mouse_move(p - abs_position);
+			
+			if(edit_target) {
 				return; // skip focus moving logic
 			}
 
 			// focus shifting logic -- when something already is in focus
 
-			
 			if((fe->behavior_flags & (behavior::focus_lock_mouse | behavior::focus_lock_text)) != 0) {
 				return; // can't shift -- 
 			}
