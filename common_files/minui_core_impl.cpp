@@ -703,7 +703,7 @@ public:
 	}
 
 	void render();
-
+	void load_ui_data();
 
 	ui_node* take_key_action(key_action a); // returns a node if a non-group node is selected
 	void change_focus(ui_node* old_focus, ui_node* new_focus);

@@ -461,16 +461,216 @@ void win_d2d_dw_ds::recreate_dpi_dependent_resource() {
 			}
 		}
 	}
-
-	
 }
-void win_d2d_dw_ds::create_window_size_resources() {
 
+void win_d2d_dw_ds::create_device_resources() {
+	HRESULT hr = S_OK;
+
+	if(!d3d_device) {
+		IDXGIAdapter* pAdapter = nullptr;
+		IDXGIFactory2* pDXGIFactory = nullptr;
+
+		RECT rcClient;
+		GetWindowRect((HWND)(m_hwnd), &rcClient);
+
+		auto nWidth = rcClient.right - rcClient.left;
+		auto nHeight = rcClient.bottom - rcClient.top;
+
+		D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0 };
+
+		safe_release(d3d_device_context);
+
+		hr = D3D11CreateDevice(
+			nullptr,
+			D3D_DRIVER_TYPE_HARDWARE,
+			nullptr,
+			D3D11_CREATE_DEVICE_SINGLETHREADED | D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+			levels, 4,
+			D3D11_SDK_VERSION,
+			&d3d_device,
+			nullptr,
+			&d3d_device_context
+		);
+
+		if(FAILED(hr)) {
+			hr = D3D11CreateDevice(nullptr,
+				D3D_DRIVER_TYPE_WARP,
+				nullptr,
+				D3D11_CREATE_DEVICE_SINGLETHREADED | D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+				levels, 4,
+				D3D11_SDK_VERSION,
+				&d3d_device,
+				nullptr,
+				&d3d_device_context
+			);
+		}
+
+		if(SUCCEEDED(hr)) {
+			safe_release(dxgi_device);
+			hr = d3d_device->QueryInterface(IID_PPV_ARGS(&dxgi_device));
+		}
+		if(SUCCEEDED(hr)) {
+			safe_release(d2d_device);
+			hr = d2d_factory->CreateDevice(dxgi_device, &d2d_device);
+		}
+		if(SUCCEEDED(hr)) {
+			safe_release(d2d_device_context);
+			hr = d2d_device->CreateDeviceContext(
+				D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
+				&d2d_device_context
+			);
+			d2d_device_context->SetUnitMode(D2D1_UNIT_MODE_PIXELS);
+		}
+		if(SUCCEEDED(hr)) {
+			hr = dxgi_device->GetAdapter(&pAdapter);
+		}
+		if(SUCCEEDED(hr)) {
+			hr = pAdapter->GetParent(IID_PPV_ARGS(&pDXGIFactory));
+		}
+		if(SUCCEEDED(hr)) {
+			DXGI_SWAP_CHAIN_DESC1  swapDesc;
+			::ZeroMemory(&swapDesc, sizeof(swapDesc));
+
+			swapDesc.Width = nWidth;
+			swapDesc.Height = nHeight;
+			swapDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+			swapDesc.Stereo = FALSE;
+			swapDesc.SampleDesc = DXGI_SAMPLE_DESC{ 1, 0 };
+			swapDesc.SampleDesc.Count = 1;
+			swapDesc.SampleDesc.Quality = 0;
+			swapDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+			swapDesc.BufferCount = 2;
+			swapDesc.Scaling = DXGI_SCALING_NONE;
+			swapDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+			swapDesc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+			swapDesc.Flags = 0;
+
+			safe_release(swap_chain);
+			hr = pDXGIFactory->CreateSwapChainForHwnd(d3d_device, m_hwnd, &swapDesc, nullptr, nullptr, &swap_chain);
+		}
+		if(SUCCEEDED(hr)) {
+			hr = dxgi_device->SetMaximumFrameLatency(1);
+		}
+
+		if(!SUCCEEDED(hr)) {
+			std::abort();
+		}
+
+		safe_release(pAdapter);
+		safe_release(pDXGIFactory);
+	}
+}
+
+void win_d2d_dw_ds::release_device_resources() {
+	safe_release(d3d_device);
+	safe_release(d3d_device_context);
+	safe_release(d2d_device);
+	safe_release(d2d_device_context);
+	safe_release(dxgi_device);
+	safe_release(swap_chain);
+}
+
+void win_d2d_dw_ds::create_window_size_resources() {
+	HRESULT hr = S_OK;
+	IDXGISurface* back_buffer = nullptr;
+
+	create_device_resources();
+
+	if(!swap_chain)
+		return;
+
+	safe_release(back_buffer_target);
+
+	// Resize render target buffers
+	d2d_device_context->SetTarget(nullptr);
+	hr = swap_chain->ResizeBuffers(0, client_x, client_y, DXGI_FORMAT_B8G8R8A8_UNORM, 0);
+
+	if(SUCCEEDED(hr)) {
+		hr = swap_chain->GetBuffer(0, IID_PPV_ARGS(&back_buffer));
+	}
+	if(SUCCEEDED(hr)) {
+		D2D1_BITMAP_PROPERTIES1 bitmapProperties =
+			D2D1::BitmapProperties1(
+				D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+				D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE),
+				dpi, dpi
+			);
+		hr = d2d_device_context->CreateBitmapFromDxgiSurface(
+			back_buffer,
+			&bitmapProperties,
+			&back_buffer_target
+		);
+	}
+
+	safe_release(back_buffer);
+
+	if(!back_buffer_target)
+		std::abort();
 }
 void win_d2d_dw_ds::d2dsetup() {
 	// TODO
 
 	d2d_device_context->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Black), &solid_brush);
+
+	D2D1_STROKE_STYLE_PROPERTIES style_prop;
+	style_prop.startCap = D2D1_CAP_STYLE_FLAT;
+	style_prop.endCap = D2D1_CAP_STYLE_FLAT;
+	style_prop.dashCap = D2D1_CAP_STYLE_FLAT;
+	style_prop.lineJoin = D2D1_LINE_JOIN_MITER;
+	style_prop.miterLimit = 10.0f;
+	style_prop.dashStyle = D2D1_DASH_STYLE_SOLID;
+	style_prop.dashOffset = 0.0f;
+	d2d_factory->CreateStrokeStyle(style_prop, nullptr, 0, &plain_strokes);
+}
+
+void win_d2d_dw_ds::render() {
+	HRESULT hr;
+
+	//static int count = 0;
+
+	create_device_resources();
+
+	if(!back_buffer_target)
+		return;
+
+	if(!is_suspended) {
+
+		d2d_device_context->BeginDraw();
+		d2d_device_context->SetTarget(back_buffer_target);
+		d2d_device_context->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
+		d2d_device_context->Clear(D2D1::ColorF(0.5f, 0.5f, 0.5f, 1.0f));
+
+			
+
+		d2d_device_context->SetTransform(D2D1::Matrix3x2F::Identity());
+		if(window_border_size != 0 && !brush_collection.empty()) {
+			d2d_device_context->DrawRectangle(D2D1_RECT_F{ window_border_size / 2.0f, window_border_size / 2.0f, float(client_x) - window_border_size / 2.0f, float(client_y) - window_border_size / 2.0f }, brush_collection[0].brush, float(window_border_size), plain_strokes);
+		}
+		d2d_device_context->SetTarget(nullptr);
+		hr = d2d_device_context->EndDraw();
+
+		InvalidateRect(m_hwnd, nullptr, FALSE);
+
+		DXGI_PRESENT_PARAMETERS params{ 0, nullptr, nullptr, nullptr };
+		hr = swap_chain->Present1(1, 0, &params);
+	} else {
+		DXGI_PRESENT_PARAMETERS params{ 0, nullptr, nullptr, nullptr };
+		hr = swap_chain->Present1(1, DXGI_PRESENT_TEST, &params);
+		if(hr == S_OK) {
+			is_suspended = false;
+			InvalidateRect(m_hwnd, nullptr, FALSE);
+		}
+	}
+
+	if(hr == DXGI_STATUS_OCCLUDED) {
+		is_suspended = true;
+		hr = S_OK;
+	} else if(hr == DXGI_ERROR_DEVICE_RESET ||
+		hr == DXGI_ERROR_DEVICE_REMOVED ||
+		hr == D2DERR_RECREATE_TARGET) {
+		hr = S_OK;
+		release_device_resources();
+	}
 }
 
 void win_d2d_dw_ds::reshow_cursor() {
@@ -1446,6 +1646,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 					app->client_x = LOWORD(lParam);
 					app->client_y = HIWORD(lParam);
 
+					app->create_window_size_resources();
+
 					if(app->minui_root) {
 						app->minui_root->on_workspace_resized(t, layout_position{ app->to_ui_space(float(LOWORD(lParam))), app->to_ui_space(float(HIWORD(lParam))) });
 						return 0;
@@ -1473,9 +1675,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 				{
 					PAINTSTRUCT ps;
 					BeginPaint(hwnd, &ps);
-					if(app->minui_root) {
-						app->minui_root->render();
-					}
+					app->render();
 					EndPaint(hwnd, &ps);
 					return 0;
 				}
@@ -4723,8 +4923,13 @@ void undo_buffer::push_state(undo_item state) {
 	}
 }
 
-void win_d2d_dw_ds::create_window() {
-	// todo: coinitialize
+void win_d2d_dw_ds::create_window(int32_t window_x_size, int32_t window_y_size, bool borderless, bool fullscreen) {
+	client_x = window_x_size;
+	client_y = window_y_size;
+
+	SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+
+	CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 
 	D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &d2d_factory);
 	CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_IWICImagingFactory, reinterpret_cast<void**>(&wic_factory));
@@ -4732,10 +4937,159 @@ void win_d2d_dw_ds::create_window() {
 	CoCreateInstance(CLSID_TF_ThreadMgr, NULL, CLSCTX_INPROC_SERVER, IID_ITfThreadMgr, (void**)&ts_manager_ptr);
 	ts_manager_ptr->Activate(&ts_client_id);
 
+	BOOL kb_preference = FALSE;
+	SystemParametersInfo(SPI_GETKEYBOARDPREF, 0, &kb_preference, 0);
+
+	if(imode == input_mode::keyboard_only || imode == input_mode::mouse_and_keyboard || (imode == input_mode::follow_input && kb_preference == TRUE))
+		minui_root->pmode = prompt_mode::keyboard;
+	else if(imode == input_mode::controller_only || imode == input_mode::controller_with_pointer)
+		minui_root->pmode = prompt_mode::controller;
+	else
+		minui_root->pmode = prompt_mode::hidden;
+
 	// create window
+	WNDCLASSEX wcex = { sizeof(WNDCLASSEX) };
+	wcex.style = CS_OWNDC | CS_DBLCLKS;
+	wcex.lpfnWndProc = WndProc;
+	wcex.cbClsExtra = 0;
+	wcex.cbWndExtra = sizeof(LONG_PTR);
+	wcex.hInstance = GetModuleHandle(nullptr);
+	wcex.hbrBackground = NULL;
+	wcex.lpszMenuName = NULL;
+	wcex.hCursor = nullptr;
+	wcex.lpszClassName = L"minui_class";
+
+	if(RegisterClassEx(&wcex) == 0) {
+		std::abort();
+	}
+
+	DWORD win32Style = !borderless ? 
+		( WS_CAPTION | WS_MINIMIZEBOX | WS_THICKFRAME | WS_MAXIMIZEBOX | WS_SYSMENU | WS_CLIPCHILDREN | WS_CLIPSIBLINGS)
+		: (fullscreen ? WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_BORDER | WS_POPUP : WS_BORDER | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
+
+	m_hwnd = CreateWindowEx(
+		0,
+		L"minui_class",
+		L"",
+		win32Style,
+		CW_USEDEFAULT,
+		CW_USEDEFAULT,
+		0,
+		0,
+		NULL,
+		NULL,
+		GetModuleHandle(nullptr),
+		this
+	);
+
+	if(!m_hwnd)
+		std::abort();
+
+	double_click_ms = GetDoubleClickTime();
+	caret_blink_ms = GetCaretBlinkTime() * 2;
+	if(GetCaretBlinkTime() == INFINITE)
+		caret_blinks = false;
+
+	last_double_click = std::chrono::steady_clock::now();
+
+	if(imode == input_mode::mouse_and_keyboard
+		|| imode == input_mode::mouse_only
+		|| imode == input_mode::controller_with_pointer
+		|| (imode == input_mode::follow_input && kb_preference == FALSE)) {
+
+		SetCursor(LoadCursor(NULL, IDC_ARROW));
+		cursor_is_visible = true;
+	} else {
+		cursor_is_visible = false;
+	}
+
+	dpi = float(GetDpiForWindow((HWND)(m_hwnd)));
+
+	pixels_per_em = int32_t(std::round(float(base_layout_size) * dpi / 96.0f));
+	window_border_size = (borderless && !fullscreen) ? int32_t(std::round(float(base_border_size) * dpi / 96.0f)) : 0;
+
+	auto wintitle = perform_substitutions(get_hande("window_title"), nullptr, 0);
+	set_window_title(wintitle.text_content.c_str());
+
+	create_device_resources();
+	d2dsetup();
+
+	if(!minui_root)
+		std::abort();
+	minui_root->load_ui_data();
+
+	if(!borderless) {
+
+		auto monitor_handle = MonitorFromWindow(m_hwnd, MONITOR_DEFAULTTOPRIMARY);
+		MONITORINFO mi;
+		mi.cbSize = sizeof(mi);
+		GetMonitorInfoW(monitor_handle, &mi);
+
+		int left = (mi.rcWork.right - mi.rcWork.left) / 2 - static_cast<int>(ceil(float(window_x_size) * dpi * global_size_multiplier / 96.f)) / 2;
+		int top = (mi.rcWork.bottom - mi.rcWork.top) / 2 - static_cast<int>(ceil(float(window_y_size) * dpi * global_size_multiplier / 96.f)) / 2;
+
+		RECT rectangle = { left, top, left + static_cast<int>(ceil(float(window_x_size) * dpi * global_size_multiplier / 96.f)), top + static_cast<int>(ceil(float(window_y_size) * dpi * global_size_multiplier / 96.f)) };
+		AdjustWindowRectExForDpi(&rectangle, win32Style, false, 0, GetDpiForWindow(m_hwnd));
+		int32_t final_width = rectangle.right - rectangle.left;
+		int32_t final_height = rectangle.bottom - rectangle.top;
+
+		SetWindowLongW(m_hwnd, GWL_STYLE, win32Style);
+		SetWindowPos(m_hwnd, HWND_NOTOPMOST, rectangle.left, rectangle.top, final_width, final_height,
+			SWP_FRAMECHANGED);
+		SetWindowRgn(m_hwnd, NULL, TRUE);
+
+		if(fullscreen)
+			ShowWindow(m_hwnd, SW_MAXIMIZE);
+		else
+			ShowWindow(m_hwnd, SW_SHOWNORMAL);
+	} else {
+
+		auto monitor_handle = MonitorFromWindow(m_hwnd, MONITOR_DEFAULTTOPRIMARY);
+		MONITORINFO mi;
+		mi.cbSize = sizeof(mi);
+		GetMonitorInfoW(monitor_handle, &mi);
+
+		RECT rectangle = mi.rcMonitor;
+		AdjustWindowRectExForDpi(&rectangle, win32Style, false, WS_EX_TOPMOST, GetDpiForWindow(m_hwnd));
+		int32_t win_width = (rectangle.right - rectangle.left);
+		int32_t win_height = (rectangle.bottom - rectangle.top);
+
+		SetWindowLongW(m_hwnd, GWL_STYLE, win32Style);
+		if(fullscreen)
+			SetWindowPos(m_hwnd, HWND_TOPMOST, rectangle.left, rectangle.top, win_width, win_height, SWP_FRAMECHANGED);
+		else
+			SetWindowPos(m_hwnd, HWND_NOTOPMOST, rectangle.left, rectangle.top, win_width, win_height, SWP_FRAMECHANGED);
+
+		ShowWindow(m_hwnd, SW_SHOWNORMAL);
+	}
+
+	UpdateWindow(m_hwnd);
+
+	// for accessibility
+	//if(UiaHasServerSideProvider(m_hwnd))
+	//	OutputDebugStringA("provider found\n"); // this was done to force the root window provider to load early
+
+	RAWINPUTDEVICE deviceList[2];
+	deviceList[0].usUsagePage = HID_USAGE_PAGE_GENERIC;
+	deviceList[0].usUsage = HID_USAGE_GENERIC_GAMEPAD;
+	deviceList[0].dwFlags = RIDEV_INPUTSINK | RIDEV_DEVNOTIFY;
+	deviceList[0].hwndTarget = m_hwnd;
+	deviceList[1] = deviceList[0];
+	deviceList[1].usUsage = HID_USAGE_GENERIC_JOYSTICK;
+	RegisterRawInputDevices(deviceList, 2, sizeof(RAWINPUTDEVICE));
+
 	// run message loop
+	MSG msg;
+
+	while(GetMessage(&msg, NULL, 0, 0)) {
+		if(minui_root->edit_target)
+			TranslateMessage(&msg);
+		DispatchMessage(&msg);
+	}
 
 	ts_manager_ptr->Deactivate();
+
+	CoUninitialize();
 }
 
 layout_position win_d2d_dw_ds::get_icon_size(icon_handle ico) {

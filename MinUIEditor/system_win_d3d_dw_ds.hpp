@@ -495,6 +495,8 @@ public:
 	uint32_t caret_blink_ms = 1000;
 	bool caret_blinks = true;
 
+	bool is_suspended = false;
+
 	uint16_t language_generation = 0;
 	uint16_t font_generation = 0;
 
@@ -511,7 +513,9 @@ public:
 	IDWriteFontCollection2* dw_font_collection = nullptr;
 	IDWriteRenderingParams3* rendering_params = nullptr;
 
+	ID2D1Bitmap1* back_buffer_target = nullptr;
 	ID2D1SolidColorBrush* solid_brush = nullptr;
+	ID2D1StrokeStyle* plain_strokes = nullptr;
 
 	ID2D1Factory6* d2d_factory = nullptr;
 	IWICImagingFactory* wic_factory = nullptr;
@@ -523,7 +527,10 @@ public:
 	void resize_text();
 	void recreate_dpi_dependent_resource();
 	void create_window_size_resources();
+	void create_device_resources();
+	void release_device_resources();
 	void d2dsetup();
+	void render();
 
 	void on_controller_input();
 	void on_device_change(WPARAM, HANDLE);
@@ -537,9 +544,6 @@ public:
 	
 
 	win_d2d_dw_ds(int32_t base_layout_size, int32_t base_border_size, bool left_to_right) : base_layout_size(base_layout_size), base_border_size(base_border_size), left_to_right(left_to_right) {
-		pixels_per_em = int32_t(std::round(float(base_layout_size) * dpi / 96.0f));
-		window_border_size = int32_t(std::round(float(base_border_size) * dpi / 96.0f));
-		SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 	}
 	~win_d2d_dw_ds() {
 		safe_release(dw_font_collection_builder);
@@ -556,13 +560,16 @@ public:
 		safe_release(swap_chain);
 
 		safe_release(solid_brush);
+		safe_release(plain_strokes);
 
 		safe_release(ts_manager_ptr);
 		safe_release(wic_factory);
 		safe_release(d2d_factory);
+
+		safe_release(back_buffer_target);
 	}
 
-	void create_window();
+	void create_window(int32_t window_x_size, int32_t window_y_size, bool borderless, bool fullscreen);
 
 	void on_dpi_change(float new_dpi);
 	void reshow_cursor();
@@ -658,9 +665,6 @@ public:
 	virtual text::variable get_text_variable(std::string_view name) final;
 
 	// GRAPHICS FUNCTIONS
-	void begin_rendering_pass() final;
-	void end_rendering_pass() final;
-
 	void rectangle(screen_space_rect content_rect, rendering_modifiers display_flags, uint16_t brush) final;
 	void empty_rectangle(screen_space_rect content_rect, rendering_modifiers display_flags) final;
 	void line(screen_space_point start, screen_space_point end, float width, uint16_t brush) final;

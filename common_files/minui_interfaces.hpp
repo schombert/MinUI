@@ -669,9 +669,6 @@ public:
 	}
 
 	// GRAPHICS FUNCTIONS
-	virtual void begin_rendering_pass() = 0;
-	virtual void end_rendering_pass() = 0;
-
 	virtual void rectangle(screen_space_rect content_rect, rendering_modifiers display_flags, uint16_t brush) = 0;
 	virtual void empty_rectangle(screen_space_rect content_rect, rendering_modifiers display_flags) = 0;
 	virtual void line(screen_space_point start, screen_space_point end, float width, uint16_t brush) = 0;
