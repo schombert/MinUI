@@ -131,12 +131,15 @@
     <ClInclude Include="framework.h" />
     <ClInclude Include="MinUIEditor.h" />
     <ClInclude Include="Resource.h" />
+    <ClInclude Include="simple_fs.hpp" />
+    <ClInclude Include="simple_fs_types_win.hpp" />
     <ClInclude Include="system_win_d3d_dw_ds.hpp" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="MinUIEditor.cpp" />
     <ClCompile Include="minui_generated.cpp" />
+    <ClCompile Include="simple_fs_win.cpp" />
     <ClCompile Include="system_win_d3d_dw_ds.cpp" />
   </ItemGroup>
   <ItemGroup>

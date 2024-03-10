@@ -1,4 +1,4 @@
-#include "system_win_d3d_dw_ds.hpp"
+﻿#include "system_win_d3d_dw_ds.hpp"
 #include "../common_files/minui_text_impl.cpp"
 #include "../common_files/minui_core_impl.cpp"
 #include <windowsx.h>
@@ -367,11 +367,14 @@ void win_d2d_dw_ds::set_locale(native_string_view id) {
 }
 void win_d2d_dw_ds::set_ltr_mode(bool is_ltr) {
 	left_to_right = is_ltr;
+	++font_generation;
 }
 native_string_view win_d2d_dw_ds::get_locale_name() {
 	return locale_data.display_name;
 }
-
+void win_d2d_dw_ds::set_locale_name(native_string name) {
+	locale_data.display_name = name;
+}
 native_string_view win_d2d_dw_ds::get_locale() {
 	return locale_data.app_locale;
 }
@@ -5373,5 +5376,254 @@ void win_d2d_dw_ds::play_sound(sound_handle h) {
 		}
 	}
 }
+
+void win_d2d_dw_ds::display_fatal_error_message(native_string_view s) {
+	native_string msg = native_string{ s };
+	MessageBox(m_hwnd, msg.c_str(), L"Fatal Error", MB_OK | MB_ICONERROR);
+}
+void win_d2d_dw_ds::text_to_clipboard(native_string_view s) {
+	if(OpenClipboard(m_hwnd)) {
+		if(EmptyClipboard()) {
+			size_t byteSize = sizeof(wchar_t) * (txt.length() + 1);
+			HGLOBAL hClipboardData = GlobalAlloc(GMEM_DDESHARE | GMEM_MOVEABLE | GMEM_ZEROINIT, byteSize);
+
+			if(hClipboardData != nullptr) {
+				void* memory = GlobalLock(hClipboardData);  // [byteSize] in bytes
+
+				if(memory != nullptr) {
+					memcpy(memory, txt.data(), byteSize);
+					GlobalUnlock(hClipboardData);
+
+					if(SetClipboardData(CF_UNICODETEXT, hClipboardData) != nullptr) {
+						hClipboardData = nullptr; // system now owns the clipboard, so don't touch it.
+					}
+				}
+				GlobalFree(hClipboardData); // free if failed
+			}
+		}
+		CloseClipboard();
+	}
+}
+native_string win_d2d_dw_ds::text_from_clipboard() {
+	std::wstring return_value;
+	if(OpenClipboard(m_hwnd)) {
+		HGLOBAL hClipboardData = GetClipboardData(CF_UNICODETEXT);
+
+		if(hClipboardData != NULL) {
+			size_t byteSize = GlobalSize(hClipboardData);
+			void* memory = GlobalLock(hClipboardData);
+			if(memory != NULL) {
+				const wchar_t* text = reinterpret_cast<const wchar_t*>(memory);
+				return_value = std::wstring(text, text + byteSize / sizeof(wchar_t));
+				GlobalUnlock(hClipboardData);
+				if(return_value.length() > 0 && return_value.back() == 0) {
+					return_value.pop_back();
+				}
+			}
+		}
+		CloseClipboard();
+	}
+	return return_value;
+}
+
+std::unique_ptr<directory> win_d2d_dw_ds::get_root_directory() {
+	return std::make_unique<sfs_directory>(simple_fs::get_root(fs));
+}
+
+char const* sfs_file::data() {
+	if(std::holds_alternative<simple_fs::unopened_file>(f)) {
+		auto opened = simple_fs::open_file(std::get<simple_fs::unopened_file>(f));
+		if(opened) {
+			f = std::move(*opened);
+		} else {
+			return nullptr;
+		}
+	}
+
+	return simple_fs::view_contents(std::get<simple_fs::file>(f)).data;
+}
+size_t sfs_file::size() {
+	if(std::holds_alternative<simple_fs::unopened_file>(f)) {
+		auto opened = simple_fs::open_file(std::get<simple_fs::unopened_file>(f));
+		if(opened) {
+			f = std::move(*opened);
+		} else {
+			return 0;
+		}
+	}
+
+	return simple_fs::view_contents(std::get<simple_fs::file>(f)).file_size;
+}
+native_string sfs_file::name() {
+	if(std::holds_alternative<simple_fs::unopened_file>(f)) {
+		return simple_fs::get_full_name(std::get<simple_fs::unopened_file>(f));
+	} else {
+		return simple_fs::get_full_name(std::get<simple_fs::file>(f));
+	}
+}
+
+std::unique_ptr<file> sfs_directory::open_file(native_string_view name) {
+	auto pf = simple_fs::peek_file(d, name);
+	if(pf) {
+		return std::make_unique<sfs_file>(*pf);
+	} else {
+		return nullptr;
+	}
+}
+std::unique_ptr<directory> sfs_directory::open_directory(native_string_view name) {
+	return std::make_unique<sfs_directory>(simple_fs::open_directory(d, name));
+}
+std::vector<std::unique_ptr<file>> sfs_directory::list_files() {
+	std::vector<std::unique_ptr<file>> result;
+	auto unop = simple_fs::list_files(d, L"");
+	for(auto& a : unop) {
+		result.push_back(std::make_unique<sfs_file>(a));
+	}
+	return result;
+}
+std::vector<std::unique_ptr<directory>> sfs_directory::list_directories() {
+	std::vector<std::unique_ptr<directory>> result;
+	auto unop = simple_fs::list_subdirectories(d);
+	for(auto& a : unop) {
+		result.push_back(std::make_unique<sfs_directory>(a));
+	}
+	return result;
+}
+native_string sfs_directory::name() {
+	return simple_fs::get_full_name(d);
+}
+
+
+void win_d2d_dw_ds::stop_ui_animations() {
+	// TODO
+}
+void win_d2d_dw_ds::prepare_ui_animation() {
+	// TODO
+}
+void win_d2d_dw_ds::prepare_layered_ui_animation() {
+	// TODO
+}
+void win_d2d_dw_ds::start_ui_animation(animation_description description) {
+	// TODO
+}
+void win_d2d_dw_ds::register_in_place_animation() {
+	// TODO
+}
+
+text::handle win_d2d_dw_ds::get_hande(std::string_view key) {
+	return text::lookup_entry(text_data, key);
+}
+text::formatted_text win_d2d_dw_ds::fp_to_text(double value, int32_t precision, bool show_plus = false) {
+	text::formatted_text result;
+
+	NUMBERFMTW fmt;
+	fmt.Grouping = locale_data.grouping;
+	fmt.LeadingZero = locale_data.leading_zero;
+	fmt.lpDecimalSep = locale_data.decimal_sep;
+	fmt.lpThousandSep = locale_data.thousand_sep;
+	fmt.NegativeOrder = locale_data.negative_order;
+	fmt.NumDigits = precision;
+
+	if(std::isfinite(value)) {
+		auto value_string = std::to_wstring(value);
+		WCHAR local_buffer[MAX_PATH] = { 0 };
+
+		if(locale_data.os_locale_is_default) {
+			GetNumberFormatEx(LOCALE_NAME_USER_DEFAULT, 0, value_string.c_str(), &fmt, local_buffer, MAX_PATH);
+		} else {
+			GetNumberFormatEx(locale_data.app_locale.c_str(), 0, value_string.c_str(), & fmt, local_buffer, MAX_PATH);
+		}
+		result.text_content = show_plus ? (std::wstring(L"+") + std::wstring(local_buffer)) : std::wstring(local_buffer);
+
+		auto decimal_part = (value >= 0) ? (value - std::floor(value)) : (value - std::ceil(value));
+		for(uint32_t i = 0; i < precision; ++i) {
+			decimal_part *= 10.0;
+		}
+
+		result.provided_attribues[0] = locale_data.cardinal_classification(int64_t(value), int64_t(std::nearbyint(precision)), precision);
+		result.provided_attribues[1] = locale_data.ordinal_classification(int64_t(value));
+		if(value == 0) {
+			result.provided_attribues[2] = text::attribute_type::z;
+			result.provided_attribues[3] = text::attribute_type::undefined;
+		} else {
+			result.provided_attribues[2] = text::attribute_type::undefined;
+		}
+	} else if(std::isnan(value)) {
+		result.text_content = L"#NAN";
+		result.provided_attribues[0] = text::attribute_type::other;
+		result.provided_attribues[1] = text::attribute_type::ord_other;
+		result.provided_attribues[3] = text::attribute_type::undefined;
+	} else { // infinite
+		if(value > 0) {
+			result.text_content = show_plus ? L"+∞" : L"∞";
+		} else {
+			result.text_content = L"-∞";
+		}
+		result.provided_attribues[0] = text::attribute_type::other;
+		result.provided_attribues[1] = text::attribute_type::ord_other;
+		result.provided_attribues[3] = text::attribute_type::undefined;
+	}
+
+	return result;
+}
+text::formatted_text win_d2d_dw_ds::int_to_text(int64_t value, bool show_plus = false) {
+	text::formatted_text result;
+
+	NUMBERFMTW fmt;
+	fmt.Grouping = locale_data.grouping;
+	fmt.LeadingZero = locale_data.leading_zero;
+	fmt.lpDecimalSep = locale_data.decimal_sep;
+	fmt.lpThousandSep = locale_data.thousand_sep;
+	fmt.NegativeOrder = locale_data.negative_order;
+	fmt.NumDigits = 0;
+
+	auto value_string = std::to_wstring(value);
+	WCHAR local_buffer[MAX_PATH] = { 0 };
+
+	if(locale_data.os_locale_is_default) {
+		GetNumberFormatEx(LOCALE_NAME_USER_DEFAULT, 0, value_string.c_str(), &fmt, local_buffer, MAX_PATH);
+	} else {
+		GetNumberFormatEx(locale_data.app_locale.c_str(), 0, value_string.c_str(), &fmt, local_buffer, MAX_PATH);
+	}
+
+	result.text_content = show_plus ? (std::wstring(L"+") + std::wstring(local_buffer)) : std::wstring(local_buffer);
+
+	result.provided_attribues[0] = locale_data.cardinal_classification(value, 0, 0);
+	result.provided_attribues[1] = locale_data.ordinal_classification(value);
+	if(value == 0) {
+		result.provided_attribues[2] = text::attribute_type::z;
+		result.provided_attribues[3] = text::attribute_type::undefined;
+	} else {
+		result.provided_attribues[2] = text::attribute_type::undefined;
+	}
+	return result;
+}
+int64_t win_d2d_dw_ds::text_to_int(native_string_view text) {
+	auto olestr = SysAllocStringLen(text.data(), UINT(text.length()));
+	int64_t result = 0;
+	if(olestr) {
+		VarI8FromStr(olestr, locale_data.lcid, 0, &result);
+		SysFreeString(olestr);
+	}
+	return result;
+}
+double win_d2d_dw_ds::text_to_double(native_string_view text) {
+	auto olestr = SysAllocStringLen(text.data(), UINT(text.length()));
+	double result = 0;
+	if(olestr) {
+		VarR8FromStr(olestr, locale_data.lcid, 0, &result);
+		SysFreeString(olestr);
+	}
+	return result;
+}
+
+text::formatted_text win_d2d_dw_ds::perform_substitutions(text::text_source body_text, text::text_source const* parameters, size_t parameter_count) {
+	std::array<text::attribute_type, text::max_attributes> attr = { text::attribute_type::undefined };
+	text::perform_substitutions(text_data, attr, body_text, parameters, parameter_count);
+}
+text::variable win_d2d_dw_ds::get_text_variable(std::string_view name) {
+	return text::get_variable(text_data, name);
+}
+
 
 }

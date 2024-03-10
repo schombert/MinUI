@@ -563,9 +563,9 @@ public:
 
 class file {
 public:
-	virtual char* data() = 0;
+	virtual char const* data() = 0;
 	virtual size_t size() = 0;
-	virtual native_string_view name() = 0;
+	virtual native_string name() = 0;
 	virtual ~file() { }
 };
 
@@ -575,7 +575,7 @@ public:
 	virtual std::unique_ptr<directory> open_directory(native_string_view name) = 0;
 	virtual std::vector<std::unique_ptr<file>> list_files() = 0;
 	virtual std::vector<std::unique_ptr<directory>> list_directories() = 0;
-	virtual native_string_view name() = 0;
+	virtual native_string name() = 0;
 	virtual ~directory() { }
 };
 
@@ -611,16 +611,9 @@ public:
 	virtual void display_fatal_error_message(native_string_view) = 0;
 	virtual void text_to_clipboard(native_string_view) = 0;
 	virtual native_string text_from_clipboard() = 0;
-	virtual void create_system_caret(int32_t width, int32_t height) = 0;
-	virtual void move_system_caret(int32_t x, int32_t y) = 0;
-	virtual void destroy_system_caret() = 0;
 
 	// FILE FUNCTIONS
 	virtual std::unique_ptr<directory> get_root_directory() = 0;
-
-	// from printui -- text services interface
-	virtual void suspend_keystroke_handling() = 0;
-	virtual void resume_keystroke_handling() = 0;
 
 	// SOUND FUNCTIONS
 	virtual void  load_sound(sound_handle, native_string_view file_name) = 0;
@@ -644,9 +637,10 @@ public:
 	virtual void add_localization_file(native_string_view file_name) = 0;
 
 	virtual text::handle get_hande(std::string_view key) = 0;
-	virtual text::formatted_text_reference get_text(text::handle id) = 0;
-	virtual text::formatted_text fp_to_text(float fp, int32_t precision, bool show_plus = false) = 0;
+	virtual text::formatted_text fp_to_text(double fp, int32_t precision, bool show_plus = false) = 0;
 	virtual text::formatted_text int_to_text(int64_t value, bool show_plus = false) = 0;
+	virtual int64_t text_to_int(native_string_view text) = 0;
+	virtual double text_to_double(native_string_view text) = 0;
 
 	virtual text::formatted_text perform_substitutions(text::text_source body_text, text::text_source const* parameters, size_t parameter_count) = 0;
 	virtual text::variable get_text_variable(std::string_view name) = 0;

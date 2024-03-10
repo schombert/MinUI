@@ -2,6 +2,8 @@
 
 #include "../common_files/minui_interfaces.hpp"
 #include "../common_files/minui_text_impl.hpp"
+#include "simple_fs_types_win.hpp"
+#include "simple_fs.hpp"
 
 #ifndef UNICODE
 #define UNICODE
@@ -447,12 +449,41 @@ struct  sound_slot {
 	}
 };
 
+class sfs_file : public file {
+public:
+	std::variant<simple_fs::unopened_file, simple_fs::file> f;
+
+	sfs_file(simple_fs::unopened_file &&u) : f(std::move(u)) { }
+	sfs_file(simple_fs::file&& u) : f(std::move(u)) {}
+
+	 char const* data() final;
+	size_t size() final;
+	native_string name() final;
+	~sfs_file() {}
+};
+
+class sfs_directory : public directory {
+public:
+	simple_fs::directory d;
+
+	sfs_directory(simple_fs::directory&& u) : d(std::move(u)) {}
+
+	std::unique_ptr<file> open_file(native_string_view name) final;
+	std::unique_ptr<directory> open_directory(native_string_view name) final;
+	std::vector<std::unique_ptr<file>> list_files() final;
+	std::vector<std::unique_ptr<directory>> list_directories() final;
+	native_string name() final;
+	~sfs_directory() {}
+};
+
+
 class win_d2d_dw_ds : public system_interface {
 public:
 	std::vector<font_data> font_collection;
 	std::vector<icon_slot> icon_collection;
 	std::vector<brush_slot> brush_collection;
 	std::vector< sound_slot> sound_collection;
+	simple_fs::file_system fs;
 
 	locale_data_s locale_data;
 	text::backing_arrays text_data;
@@ -544,6 +575,7 @@ public:
 	
 
 	win_d2d_dw_ds(int32_t base_layout_size, int32_t base_border_size, bool left_to_right) : base_layout_size(base_layout_size), base_border_size(base_border_size), left_to_right(left_to_right) {
+		simple_fs::add_root(fs, L".");
 	}
 	~win_d2d_dw_ds() {
 		safe_release(dw_font_collection_builder);
@@ -625,15 +657,9 @@ public:
 	void display_fatal_error_message(native_string_view) final;
 	void text_to_clipboard(native_string_view) final;
 	native_string text_from_clipboard() final;
-	void create_system_caret(int32_t width, int32_t height) final;
-	void move_system_caret(int32_t x, int32_t y) final;
-	void destroy_system_caret() final;
 
-	// TODO: file functions
-
-	// from printui -- text services interface
-	void suspend_keystroke_handling() final;
-	void resume_keystroke_handling() final;
+	// FILE FUNCTIONS
+	std::unique_ptr<directory> get_root_directory() final;
 
 	// SOUND FUNCTIONS
 	void  load_sound(sound_handle, native_string_view file_name) final;
@@ -657,12 +683,13 @@ public:
 	void add_localization_file(native_string_view file_name) final;
 
 	text::handle get_hande(std::string_view key) final;
-	text::formatted_text_reference get_text(text::handle id) final;
-	text::formatted_text fp_to_text(float fp, int32_t precision, bool show_plus = false) final;
+	text::formatted_text fp_to_text(double fp, int32_t precision, bool show_plus = false) final;
 	text::formatted_text int_to_text(int64_t value, bool show_plus = false) final;
+	int64_t text_to_int(native_string_view text) final;
+	double text_to_double(native_string_view text) final;
 
-	virtual text::formatted_text perform_substitutions(text::text_source body_text, text::text_source const* parameters, size_t parameter_count) final;
-	virtual text::variable get_text_variable(std::string_view name) final;
+	text::formatted_text perform_substitutions(text::text_source body_text, text::text_source const* parameters, size_t parameter_count) final;
+	text::variable get_text_variable(std::string_view name) final;
 
 	// GRAPHICS FUNCTIONS
 	void rectangle(screen_space_rect content_rect, rendering_modifiers display_flags, uint16_t brush) final;
