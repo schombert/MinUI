@@ -664,7 +664,7 @@ public:
 
 	// GRAPHICS FUNCTIONS
 	virtual void rectangle(screen_space_rect content_rect, rendering_modifiers display_flags, uint16_t brush) = 0;
-	virtual void empty_rectangle(screen_space_rect content_rect, rendering_modifiers display_flags) = 0;
+	virtual void empty_rectangle(screen_space_rect content_rect, rendering_modifiers display_flags, uint16_t brush) = 0;
 	virtual void line(screen_space_point start, screen_space_point end, float width, uint16_t brush) = 0;
 	virtual void interactable(screen_space_point location, interactable_state state, uint16_t fg_brush, interactable_orientation o, rendering_modifiers display_flags = rendering_modifiers::none) = 0;
 	virtual void image(image_handle img, screen_space_rect, int32_t sub_slot = 0) = 0;
@@ -686,8 +686,9 @@ public:
 	virtual void add_to_image_slot(image_handle slot, native_string_view file_name, em x_ems, em y_ems, int32_t sub_index) = 0;
 	virtual int32_t get_image_set_size(image_handle ico) = 0;
 
-	virtual void add_color_brush(uint16_t id, brush_color c, bool is_dark) = 0;
-	virtual void add_image_color_brush(uint16_t id, native_string_view file_name, brush_color c, bool is_dark) = 0;
+	virtual void add_color_brush(uint16_t id, brush_color c, bool as_disabled) = 0;
+	virtual void add_image_color_brush(uint16_t id, native_string_view file_name, brush_color c, bool as_disabled) = 0;
+	virtual void set_brush_highlights(uint16_t id, float line_shading, float highlight_shading, float line_highlight_shading) = 0;
 };
 
 namespace behavior {

@@ -362,8 +362,13 @@ struct icon_slot {
 struct brush_slot {
 	ID2D1Brush* brush = nullptr;
 	ID2D1Bitmap* brush_bitmap = nullptr;
+	ID2D1Brush* disabled_brush = nullptr;
+	ID2D1Bitmap* disabled_brush_bitmap = nullptr;
+
 	brush_color color;
-	bool is_dark = false;
+	float line_shading = 0.0f;
+	float highlight_shading = 0.0f;
+	float line_highlight_shading = 0.0f;
 
 	brush_slot() = default;
 	brush_slot(brush_slot const& o) = delete;
@@ -372,19 +377,31 @@ struct brush_slot {
 		o.brush = nullptr;
 		brush_bitmap = o.brush_bitmap;
 		o.brush_bitmap = nullptr;
+		disabled_brush = o.disabled_brush;
+		o.disabled_brush = nullptr;
+		disabled_brush_bitmap = o.disabled_brush_bitmap;
+		o.disabled_brush_bitmap = nullptr;
 		color = o.color;
-		is_dark = o.is_dark;
+		line_shading = o.line_shading;
+		highlight_shading = o.highlight_shading;
+		line_highlight_shading = o.line_highlight_shading;
 	}
 	brush_slot& operator=(brush_slot&& o) noexcept {
 		std::swap(brush, o.brush);
 		std::swap(brush_bitmap, o.brush_bitmap);
+		std::swap(disabled_brush, o.disabled_brush);
+		std::swap(disabled_brush_bitmap, o.disabled_brush_bitmap);
 		color = o.color;
-		is_dark = o.is_dark;
+		line_shading = o.line_shading;
+		highlight_shading = o.highlight_shading;
+		line_highlight_shading = o.line_highlight_shading;
 		return *this;
 	}
 	~brush_slot() {
 		safe_release(brush);
 		safe_release(brush_bitmap);
+		safe_release(disabled_brush);
+		safe_release(disabled_brush_bitmap);
 	}
 };
 
@@ -527,6 +544,7 @@ public:
 	bool caret_blinks = true;
 
 	bool is_suspended = false;
+	bool rendering_as_highlighted_line = false;
 
 	uint16_t language_generation = 0;
 	uint16_t font_generation = 0;
@@ -546,6 +564,7 @@ public:
 
 	ID2D1Bitmap1* back_buffer_target = nullptr;
 	ID2D1SolidColorBrush* solid_brush = nullptr;
+	ID2D1SolidColorBrush* white_brush = nullptr;
 	ID2D1StrokeStyle* plain_strokes = nullptr;
 
 	ID2D1Factory6* d2d_factory = nullptr;
@@ -592,6 +611,7 @@ public:
 		safe_release(swap_chain);
 
 		safe_release(solid_brush);
+		safe_release(white_brush);
 		safe_release(plain_strokes);
 
 		safe_release(ts_manager_ptr);
@@ -693,7 +713,7 @@ public:
 
 	// GRAPHICS FUNCTIONS
 	void rectangle(screen_space_rect content_rect, rendering_modifiers display_flags, uint16_t brush) final;
-	void empty_rectangle(screen_space_rect content_rect, rendering_modifiers display_flags) final;
+	void empty_rectangle(screen_space_rect content_rect, rendering_modifiers display_flags, uint16_t brush) final;
 	void line(screen_space_point start, screen_space_point end, float width, uint16_t brush) final;
 	void interactable(screen_space_point location, interactable_state state, uint16_t fg_brush, interactable_orientation o, rendering_modifiers display_flags = rendering_modifiers::none) final;
 	void image(image_handle img, screen_space_rect, int32_t sub_slot = 0) final;
@@ -713,8 +733,9 @@ public:
 	void add_svg_to_icon_slot(icon_handle slot, native_string_view file_name, em x_ems, em y_ems, int32_t sub_index) final;
 	int32_t get_icon_set_size(icon_handle ico) final;
 
-	void add_color_brush(uint16_t id, brush_color c, bool is_dark) final;
-	void add_image_color_brush(uint16_t id, native_string_view file_name, brush_color c, bool is_dark) final;
+	void add_color_brush(uint16_t id, brush_color c, bool as_disabled) final;
+	void add_image_color_brush(uint16_t id, native_string_view file_name, brush_color c, bool as_disabled) final;
+	void set_brush_highlights(uint16_t id, float line_shading, float highlight_shading, float line_highlight_shading) final;
 
 	friend LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 	friend class dw_static_text_provider;

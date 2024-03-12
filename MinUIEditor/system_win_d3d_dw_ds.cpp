@@ -614,6 +614,7 @@ void win_d2d_dw_ds::d2dsetup() {
 	// TODO
 
 	d2d_device_context->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Black), &solid_brush);
+	d2d_device_context->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &solid_brush);
 
 	D2D1_STROKE_STYLE_PROPERTIES style_prop;
 	style_prop.startCap = D2D1_CAP_STYLE_FLAT;
@@ -5215,29 +5216,49 @@ int32_t win_d2d_dw_ds::get_icon_set_size(icon_handle ico) {
 	}
 }
 
-void win_d2d_dw_ds::add_color_brush(uint16_t id, brush_color c, bool is_dark) {
+void win_d2d_dw_ds::set_brush_highlights(uint16_t id, float line_shading, float highlight_shading, float line_highlight_shading) {
 	if(id >= brush_collection.size()) {
 		brush_collection.resize(id + 1);
 	}
-	safe_release(brush_collection[id].brush);
-	safe_release(brush_collection[id].brush_bitmap);
+	brush_collection[id].line_shading = line_shading;
+	brush_collection[id].highlight_shading = highlight_shading;
+	brush_collection[id].line_highlight_shading = line_highlight_shading;
+}
 
-	brush_collection[id].color = c;
-	brush_collection[id].is_dark = is_dark;
+void win_d2d_dw_ds::add_color_brush(uint16_t id, brush_color c, bool as_disabled) {
+	if(id >= brush_collection.size()) {
+		brush_collection.resize(id + 1);
+	}
+	if(!as_disabled) {
+		safe_release(brush_collection[id].brush);
+		safe_release(brush_collection[id].brush_bitmap);
+	} else {
+		safe_release(brush_collection[id].disabled_brush);
+		safe_release(brush_collection[id].disabled_brush_bitmap);
+	}
+	if(!as_disabled)
+		brush_collection[id].color = c;
 
 	ID2D1SolidColorBrush* t;
 	d2d_device_context->CreateSolidColorBrush(D2D1::ColorF(c.r, c.g, c.b, c.a), &t);
-	brush_collection[id].brush = t;
+	if(!as_disabled)
+		brush_collection[id].brush = t;
+	else
+		brush_collection[id].disabled_brush = t;
 }
-void win_d2d_dw_ds::add_image_color_brush(uint16_t id, native_string_view file_name, brush_color c, bool is_dark) {
+void win_d2d_dw_ds::add_image_color_brush(uint16_t id, native_string_view file_name, brush_color c, bool as_disabled) {
 	if(id >= brush_collection.size()) {
 		brush_collection.resize(id + 1);
 	}
-	safe_release(brush_collection[id].brush);
-	safe_release(brush_collection[id].brush_bitmap);
-
-	brush_collection[id].color = c;
-	brush_collection[id].is_dark = is_dark;
+	if(!as_disabled) {
+		safe_release(brush_collection[id].brush);
+		safe_release(brush_collection[id].brush_bitmap);
+	} else {
+		safe_release(brush_collection[id].disabled_brush);
+		safe_release(brush_collection[id].disabled_brush_bitmap);
+	}
+	if(!as_disabled)
+		brush_collection[id].color = c;
 
 	IWICBitmapDecoder* pDecoder = nullptr;
 	IWICBitmapFrameDecode* pSource = nullptr;
@@ -5260,25 +5281,102 @@ void win_d2d_dw_ds::add_image_color_brush(uint16_t id, native_string_view file_n
 			nullptr, 0.f, WICBitmapPaletteTypeMedianCut);
 	}
 	if(SUCCEEDED(hr)) {
-		hr = d2d_device_context->CreateBitmapFromWicBitmap(pConverter, nullptr, &brush_collection[id].brush_bitmap);
+		if(!as_disabled)
+			hr = d2d_device_context->CreateBitmapFromWicBitmap(pConverter, nullptr, &brush_collection[id].brush_bitmap);
+		else
+			hr = d2d_device_context->CreateBitmapFromWicBitmap(pConverter, nullptr, &brush_collection[id].disabled_brush_bitmap);
 	}
 	if(SUCCEEDED(hr)) {
-		hr = d2d_device_context->CreateBitmapBrush(brush_collection[id].brush_bitmap, &t);
+		if(!as_disabled)
+			hr = d2d_device_context->CreateBitmapBrush(brush_collection[id].brush_bitmap, &t);
+		else
+			hr = d2d_device_context->CreateBitmapBrush(brush_collection[id].disabled_brush_bitmap, &t);
 	}
 	if(SUCCEEDED(hr)) {
 		t->SetExtendModeX(D2D1_EXTEND_MODE_WRAP);
 		t->SetExtendModeY(D2D1_EXTEND_MODE_WRAP);
-		brush_collection[id].brush = t;
+		if(!as_disabled)
+			brush_collection[id].brush = t;
+		else
+			brush_collection[id].disabled_brush = t;
 	} else {
 		ID2D1SolidColorBrush* t2;
 		d2d_device_context->CreateSolidColorBrush(D2D1::ColorF(c.r, c.g, c.b, c.a), &t2);
-		brush_collection[id].brush = t2;
+		if(!as_disabled)
+			brush_collection[id].brush = t2;
+		else
+			brush_collection[id].disabled_brush = t2;
 	}
 
 	safe_release(pDecoder);
 	safe_release(pSource);
 	safe_release(pConverter);
 	safe_release(pScaler);
+}
+
+void win_d2d_dw_ds::rectangle(screen_space_rect content_rect, rendering_modifiers display_flags, uint16_t brush) {
+	auto bsize = window_border_size;
+	auto base_x = left_to_right ? float(content_rect.x + bsize) : client_x - (bsize + content_rect.width + content_rect.x));
+
+	D2D1_RECT_F dest_rect{
+		base_x,
+		float(content_rect.y + bsize),
+		base_x + float(content_rect.width),
+		float(content_rect.y + content_rect.height) };
+
+	d2d_device_context->FillRectangle(dest_rect, display_flags != rendering_modifiers::disabled ? brush_collection[brush].brush : brush_collection[brush].disabled_brush);
+	empty_rectangle(content_rect, display_flags, brush);
+}
+void win_d2d_dw_ds::empty_rectangle(screen_space_rect content_rect, rendering_modifiers display_flags, uint16_t brush) {
+	auto bsize = window_border_size;
+	auto base_x = left_to_right ? float(content_rect.x + bsize) : client_x - (bsize + content_rect.width + content_rect.x));
+
+	D2D1_RECT_F dest_rect{
+		base_x,
+		float(content_rect.y + bsize),
+		base_x + float(content_rect.width),
+		float(content_rect.y + content_rect.height) };
+
+	if(rendering_as_highlighted_line) {
+		if(display_flags == rendering_modifiers::highlighted) {
+			auto b = brush_collection[brush].line_highlight_shading > 0.0f ? white_brush : solid_brush;
+			b->SetOpacity(std::abs(brush_collection[brush].line_highlight_shading));
+			d2d_device_context->FillRectangle(dest_rect, b);
+			b->SetOpacity(1.0f);
+		} else {
+			auto b = brush_collection[brush].line_shading > 0.0f ? white_brush : solid_brush;
+			b->SetOpacity(std::abs(brush_collection[brush].line_shading));
+			d2d_device_context->FillRectangle(dest_rect, b);
+			b->SetOpacity(1.0f);
+		}
+	} else {
+		if(display_flags == rendering_modifiers::highlighted) {
+			auto b = brush_collection[brush].highlight_shading > 0.0f ? white_brush : solid_brush;
+			b->SetOpacity(std::abs(brush_collection[brush].highlight_shading));
+			d2d_device_context->FillRectangle(dest_rect, b);
+			b->SetOpacity(1.0f);
+		} else {
+			// no color adjustment
+		}
+	}
+}
+void win_d2d_dw_ds::line(screen_space_point start, screen_space_point end, float width, uint16_t brush) {
+
+}
+void win_d2d_dw_ds::interactable(screen_space_point location, interactable_state state, uint16_t fg_brush, interactable_orientation o, rendering_modifiers display_flags = rendering_modifiers::none) {
+
+}
+void win_d2d_dw_ds::image(image_handle img, screen_space_rect, int32_t sub_slot = 0) {
+
+}
+void win_d2d_dw_ds::background(image_handle img, screen_space_rect, layout_rect interior, rendering_modifiers display_flags = rendering_modifiers::none) {
+
+}
+void win_d2d_dw_ds::icon(icon_handle ico, screen_space_rect, uint16_t br, rendering_modifiers display_flags = rendering_modifiers::none, int32_t sub_slot = 0) {
+
+}
+void win_d2d_dw_ds::set_line_highlight_mode(bool highlight_on) {
+	rendering_as_highlighted_line = highlight_on;
 }
 
 void win_d2d_dw_ds::load_sound(sound_handle h, native_string_view file_name) {
