@@ -5096,6 +5096,56 @@ void win_d2d_dw_ds::create_window(int32_t window_x_size, int32_t window_y_size, 
 	CoUninitialize();
 }
 
+void win_d2d_dw_ds::add_to_image_slot(image_handle slot, native_string_view file_name, em x_ems, em y_ems, int32_t sub_index) {
+	if(0 > slot.value || 0 > sub_index) {
+		return;
+	}
+	if(size_t(slot.value) >= image_collection.size()) {
+		image_collection.resize(size_t(slot.value) + 1);
+	}
+	if(size_t(sub_index) >= image_collection[slot.value].sub_items.size()) {
+		image_collection[slot.value].sub_items.resize(size_t(sub_index) + 1);
+	}
+	image_collection[slot.value].x = std::max(image_collection[slot.value].x, x_ems);
+	image_collection[slot.value].y = std::max(image_collection[slot.value].y, y_ems);
+
+	auto& i = image_collection[slot.value].sub_items[sub_index];
+	safe_release(i.img_bitmap);
+
+	IWICBitmapDecoder* pDecoder = nullptr;
+	IWICBitmapFrameDecode* pSource = nullptr;
+	IWICFormatConverter* pConverter = nullptr;
+
+	native_string fn = native_string{ file_name };
+	auto hr = wic_factory->CreateDecoderFromFilename(fn.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, &pDecoder);
+
+	if(SUCCEEDED(hr)) {
+		hr = pDecoder->GetFrame(0, &pSource);
+	}
+	if(SUCCEEDED(hr)) {
+		hr = wic_factory->CreateFormatConverter(&pConverter);
+	}
+	if(SUCCEEDED(hr)) {
+		hr = pConverter->Initialize(
+			pSource, GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone,
+			nullptr, 0.f, WICBitmapPaletteTypeMedianCut);
+	}
+	if(SUCCEEDED(hr)) {
+		hr = d2d_device_context->CreateBitmapFromWicBitmap(pConverter, nullptr, &(i.img_bitmap));
+	}
+
+	safe_release(pDecoder);
+	safe_release(pSource);
+	safe_release(pConverter);
+}
+int32_t win_d2d_dw_ds::get_image_set_size(image_handle ico) {
+	if(0 <= ico.value && size_t(ico.value) <= image_collection.size()) {
+		return int32_t(image_collection[ico.value].sub_items.size());
+	} else {
+		return 0;
+	}
+}
+
 layout_position win_d2d_dw_ds::get_icon_size(icon_handle ico) {
 	if(0 <= ico.value && size_t(ico.value) <= icon_collection.size()) {
 		return layout_position{ icon_collection[ico.value].x, icon_collection[ico.value].y };
@@ -5190,15 +5240,10 @@ void win_d2d_dw_ds::add_svg_to_icon_slot(icon_handle slot, native_string_view fi
 		d2d_device_context->SetTarget(i.icon_bitmap);
 		d2d_device_context->Clear(D2D1_COLOR_F{ 0.0f, 0.0f, 0.0f, 0.0f });
 
-		if(left_to_right) {
-			d2d_device_context->SetTransform(
-				D2D1::Matrix3x2F::Scale(float(pixels_per_em) / 10000.0f, float(pixels_per_em) / 10000.0f, D2D_POINT_2F{ 0.0f, 0.0f }));
-		} else {
-			d2d_device_context->SetTransform(
-				D2D1::Matrix3x2F::Translation( -float(icon_collection[slot.value].x.value * 100), 0.0f) *
-				D2D1::Matrix3x2F::Scale(- float(pixels_per_em) / 10000.0f, float(pixels_per_em) / 10000.0f, D2D_POINT_2F{ 0.0f, 0.0f })
-			);
-		}
+		
+		d2d_device_context->SetTransform(
+			D2D1::Matrix3x2F::Scale(float(pixels_per_em) / 10000.0f, float(pixels_per_em) / 10000.0f, D2D_POINT_2F{ 0.0f, 0.0f }));
+		
 
 		d2d_device_context->DrawSvgDocument(i.doc);
 		d2d_device_context->SetTransform(D2D1::Matrix3x2F::Identity());
@@ -5316,26 +5361,32 @@ void win_d2d_dw_ds::add_image_color_brush(uint16_t id, native_string_view file_n
 
 void win_d2d_dw_ds::rectangle(screen_space_rect content_rect, rendering_modifiers display_flags, uint16_t brush) {
 	auto bsize = window_border_size;
-	auto base_x = left_to_right ? float(content_rect.x + bsize) : client_x - (bsize + content_rect.width + content_rect.x));
+	auto base_x = left_to_right ? float(content_rect.x + bsize) : client_x - (bsize + content_rect.width + content_rect.x);
+
+	if(brush >= brush_collection.size())
+		return;
 
 	D2D1_RECT_F dest_rect{
 		base_x,
 		float(content_rect.y + bsize),
 		base_x + float(content_rect.width),
-		float(content_rect.y + content_rect.height) };
+		float(content_rect.y + bsize + content_rect.height) };
 
 	d2d_device_context->FillRectangle(dest_rect, display_flags != rendering_modifiers::disabled ? brush_collection[brush].brush : brush_collection[brush].disabled_brush);
 	empty_rectangle(content_rect, display_flags, brush);
 }
 void win_d2d_dw_ds::empty_rectangle(screen_space_rect content_rect, rendering_modifiers display_flags, uint16_t brush) {
 	auto bsize = window_border_size;
-	auto base_x = left_to_right ? float(content_rect.x + bsize) : client_x - (bsize + content_rect.width + content_rect.x));
+	auto base_x = left_to_right ? float(content_rect.x + bsize) : client_x - (bsize + content_rect.width + content_rect.x);
+
+	if(brush >= brush_collection.size())
+		return;
 
 	D2D1_RECT_F dest_rect{
 		base_x,
 		float(content_rect.y + bsize),
 		base_x + float(content_rect.width),
-		float(content_rect.y + content_rect.height) };
+		float(content_rect.y + bsize + content_rect.height) };
 
 	if(rendering_as_highlighted_line) {
 		if(display_flags == rendering_modifiers::highlighted) {
@@ -5361,19 +5412,266 @@ void win_d2d_dw_ds::empty_rectangle(screen_space_rect content_rect, rendering_mo
 	}
 }
 void win_d2d_dw_ds::line(screen_space_point start, screen_space_point end, float width, uint16_t brush) {
+	if(brush >= brush_collection.size())
+		return;
 
+	auto bsize = window_border_size;
+	auto base_x = left_to_right ? float(start.x + bsize) : client_x - (bsize + start.x);
+	auto end_x = left_to_right ? float(end.x + bsize) : client_x - (bsize + end.x);
+
+	d2d_device_context->DrawLine(D2D1_POINT_2F{ base_x, float(window_border_size + start.y) }, D2D1_POINT_2F{ end_x, float(window_border_size + end.y) }, brush_collection[brush].brush, pixels_per_em * width, plain_strokes);
 }
-void win_d2d_dw_ds::interactable(screen_space_point location, interactable_state state, uint16_t fg_brush, interactable_orientation o, rendering_modifiers display_flags = rendering_modifiers::none) {
+void win_d2d_dw_ds::interactable(screen_space_point location, interactable_state state, uint16_t fg_brush, interactable_orientation o, rendering_modifiers display_flags) {
 
+
+	//TODO
 }
-void win_d2d_dw_ds::image(image_handle img, screen_space_rect, int32_t sub_slot = 0) {
+void win_d2d_dw_ds::image(image_handle img, screen_space_rect content_rect, int32_t sub_slot) {
+	if(0 > img.value || 0 > sub_slot) {
+		return;
+	}
+	if(size_t(img.value) >= image_collection.size()) {
+		return;
+	}
+	if(size_t(sub_slot) >= image_collection[img.value].sub_items.size()) {
+		return;
+	}
 
+	auto& i = image_collection[img.value].sub_items[sub_slot];
+	if(!i.img_bitmap)
+		return;
+
+	auto bsize = window_border_size;
+	auto base_x = left_to_right ? float(content_rect.x + bsize) : client_x - (bsize + content_rect.width + content_rect.x);
+
+	D2D1_RECT_F dest_rect{
+		base_x,
+		float(content_rect.y + bsize),
+		base_x + float(content_rect.width),
+		float(content_rect.y + bsize + content_rect.height) };
+
+	d2d_device_context->DrawBitmap(i.img_bitmap, dest_rect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, nullptr);
 }
-void win_d2d_dw_ds::background(image_handle img, screen_space_rect, layout_rect interior, rendering_modifiers display_flags = rendering_modifiers::none) {
+void win_d2d_dw_ds::background(image_handle img, uint16_t brush, screen_space_rect content_rect, layout_rect interior, rendering_modifiers display_flags, int32_t sub_slot) {
+	if(0 > img.value || 0 > sub_slot) {
+		return;
+	}
+	if(size_t(img.value) >= image_collection.size()) {
+		return;
+	}
+	if(size_t(sub_slot) >= image_collection[img.value].sub_items.size()) {
+		return;
+	}
 
+	auto& i = image_collection[img.value].sub_items[sub_slot];
+	if(!i.img_bitmap)
+		return;
+
+	auto bsize = window_border_size;
+	auto base_x = left_to_right ? float(content_rect.x + bsize) : client_x - (bsize + content_rect.width + content_rect.x);
+
+	D2D1_RECT_F dest_rect{
+		base_x,
+		float(content_rect.y + bsize),
+		base_x + float(content_rect.width),
+		float(content_rect.y + bsize + content_rect.height) };
+
+	if(!left_to_right) {
+		d2d_device_context->SetTransform(D2D1::Matrix3x2F::Scale(-1.0f, 1.0f, D2D1_POINT_2F{ float(base_x + content_rect.width) / 2.0f, 0.0f }));
+	}
+
+	auto bmp_size = i.img_bitmap->GetSize();
+
+	if(interior.x.value > 0 && interior.y.value > 0) {  // top left corner
+		float pa = float(interior.x.value) / 2048.0f;
+		float pb = float(interior.y.value) / 2048.0f;
+
+		D2D1_RECT_F dest_rect{
+			base_x,
+			float(content_rect.y + bsize),
+			base_x + float(content_rect.width) * pa,
+			float(content_rect.y + bsize) + float(content_rect.height) * pb };
+		D2D1_RECT_F source_rect{
+			0.0f,
+			0.0f,
+			bmp_size.width * pa,
+			bmp_size.height * pa };
+		d2d_device_context->DrawBitmap(i.img_bitmap, dest_rect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, source_rect);
+	}
+	if(interior.width.value > 0 && interior.y.value > 0) {  // top right corner
+		float pa = float(interior.width.value) / 2048.0f;
+		float pb = float(interior.y.value) / 2048.0f;
+
+		D2D1_RECT_F dest_rect{
+			base_x + float(content_rect.width) * (1.0f - pa),
+			float(content_rect.y + bsize),
+			base_x + float(content_rect.width),
+			float(content_rect.y + bsize) + float(content_rect.height) * pb };
+		D2D1_RECT_F source_rect{
+			bmp_size.width * (1.0f - pa),
+			0.0f,
+			bmp_size.width,
+			bmp_size.height * pa };
+		d2d_device_context->DrawBitmap(i.img_bitmap, dest_rect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, source_rect);
+	}
+	if(interior.x.value > 0 && interior.height.value > 0) {  // bottom left corner
+		float pa = float(interior.x.value) / 2048.0f;
+		float pb = float(interior.height.value) / 2048.0f;
+
+		D2D1_RECT_F dest_rect{
+			base_x,
+			float(content_rect.y + bsize) + float(content_rect.height) * (1.0f - pb),
+			base_x + float(content_rect.width) * pa,
+			float(content_rect.y + bsize) + float(content_rect.height) };
+		D2D1_RECT_F source_rect{
+			0.0f,
+			bmp_size.height * (1.0f - pb),
+			bmp_size.width * pa,
+			bmp_size.height };
+		d2d_device_context->DrawBitmap(i.img_bitmap, dest_rect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, source_rect);
+	}
+	if(interior.width.value > 0 && interior.height.value > 0) {  // bottom right corner
+		float pa = float(interior.width.value) / 2048.0f;
+		float pb = float(interior.height.value) / 2048.0f;
+
+		D2D1_RECT_F dest_rect{
+			base_x + float(content_rect.width) * (1.0f - pa),
+			float(content_rect.y + bsize) + float(content_rect.height) * (1.0f - pb),
+			base_x + float(content_rect.width),
+			float(content_rect.y + bsize) + float(content_rect.height) };
+		D2D1_RECT_F source_rect{
+			bmp_size.width * (1.0f - pa),
+			bmp_size.height * (1.0f - pb),
+			bmp_size.width,
+			bmp_size.height };
+		d2d_device_context->DrawBitmap(i.img_bitmap, dest_rect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, source_rect);
+	}
+	if(interior.x.value > 0) {  // left border
+		float pa = float(interior.x.value) / 2048.0f;
+		float ra = float(interior.y.value) / 2048.0f;
+		float rb = float(interior.height.value) / 2048.0f;
+
+		D2D1_RECT_F dest_rect{
+			base_x,
+			float(content_rect.y + bsize) + float(content_rect.height) * (ra),
+			base_x + float(content_rect.width) * pa,
+			float(content_rect.y + bsize) + float(content_rect.height) * (1.0f - rb) };
+		D2D1_RECT_F source_rect{
+			0.0f,
+			bmp_size.height * (ra),
+			bmp_size.width * pa,
+			bmp_size.height * (1.0f - rb) };
+		d2d_device_context->DrawBitmap(i.img_bitmap, dest_rect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, source_rect);
+	}
+	if(interior.width.value > 0) {  // right border
+		float pa = float(interior.width.value) / 2048.0f;
+		float ra = float(interior.y.value) / 2048.0f;
+		float rb = float(interior.height.value) / 2048.0f;
+
+		D2D1_RECT_F dest_rect{
+			base_x + float(content_rect.width) * (1.0f - pa),
+			float(content_rect.y + bsize) + float(content_rect.height) * (ra),
+			base_x + float(content_rect.width),
+			float(content_rect.y + bsize) + float(content_rect.height) * (1.0f - rb) };
+		D2D1_RECT_F source_rect{
+			bmp_size.width * (1.0f - pa),
+			bmp_size.height * (ra),
+			bmp_size.width,
+			bmp_size.height * (1.0f - rb) };
+		d2d_device_context->DrawBitmap(i.img_bitmap, dest_rect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, source_rect);
+	}
+	if(interior.y.value > 0) {  // top border
+		float pa = float(interior.y.value) / 2048.0f;
+		float ra = float(interior.x.value) / 2048.0f;
+		float rb = float(interior.width.value) / 2048.0f;
+
+		D2D1_RECT_F dest_rect{
+			base_x + float(content_rect.width) * ra,
+			float(content_rect.y + bsize),
+			base_x + float(content_rect.width) * (1.0f - rb),
+			float(content_rect.y + bsize) + float(content_rect.height) * pa };
+		D2D1_RECT_F source_rect{
+			bmp_size.width * ra,
+			0.0f,
+			bmp_size.width * (1.0f - rb),
+			bmp_size.height * pa };
+		d2d_device_context->DrawBitmap(i.img_bitmap, dest_rect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, source_rect);
+	}
+	if(interior.height.value > 0) {  // bottom border
+		float pa = float(interior.height.value) / 2048.0f;
+		float ra = float(interior.x.value) / 2048.0f;
+		float rb = float(interior.width.value) / 2048.0f;
+
+		D2D1_RECT_F dest_rect{
+			base_x + float(content_rect.width) * ra,
+			float(content_rect.y + bsize) + float(content_rect.height) * (1.0f - pa),
+			base_x + float(content_rect.width) * (1.0f - rb),
+			float(content_rect.y + bsize) + float(content_rect.height) };
+		D2D1_RECT_F source_rect{
+			bmp_size.width * ra,
+			bmp_size.height * (1.0f - pa),
+			bmp_size.width * (1.0f - rb),
+			bmp_size.height };
+		d2d_device_context->DrawBitmap(i.img_bitmap, dest_rect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, source_rect);
+	}
+	{ // interior
+		float pa = float(interior.y.value) / 2048.0f;
+		float pb = float(interior.height.value) / 2048.0f;
+		float ra = float(interior.x.value) / 2048.0f;
+		float rb = float(interior.width.value) / 2048.0f;
+
+		D2D1_RECT_F dest_rect{
+			base_x + float(content_rect.width) * ra,
+			float(content_rect.y + bsize) + float(content_rect.height) * pa,
+			base_x + float(content_rect.width) * (1.0f - rb),
+			float(content_rect.y + bsize) + float(content_rect.height) * (1.0f - pb) };
+		D2D1_RECT_F source_rect{
+			bmp_size.width * ra,
+			bmp_size.height * pa,
+			bmp_size.width * (1.0f - rb),
+			bmp_size.height * (1.0f - pb) };
+		d2d_device_context->DrawBitmap(i.img_bitmap, dest_rect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, source_rect);
+	}
+
+	d2d_device_context->SetTransform(D2D1::Matrix3x2F::Identity());
+
+	empty_rectangle(content_rect, display_flags, brush);
 }
-void win_d2d_dw_ds::icon(icon_handle ico, screen_space_rect, uint16_t br, rendering_modifiers display_flags = rendering_modifiers::none, int32_t sub_slot = 0) {
+void win_d2d_dw_ds::icon(icon_handle ico, screen_space_rect content_rect, uint16_t br, rendering_modifiers display_flags, int32_t sub_slot) {
+	if(0 > ico.value || 0 > sub_slot) {
+		return;
+	}
+	if(size_t(ico.value) >= icon_collection.size()) {
+		return;
+	}
+	if(size_t(sub_slot) >= icon_collection[ico.value].sub_items.size()) {
+		return;
+	}
+	if(br >= brush_collection.size())
+		return;
 
+	auto& i = icon_collection[ico.value].sub_items[sub_slot];
+	if(!i.icon_bitmap)
+		return;
+
+	auto bsize = window_border_size;
+	auto base_x = left_to_right ? float(content_rect.x + bsize) : client_x - (bsize + content_rect.width + content_rect.x);
+
+	D2D1_RECT_F dest_rect{
+		base_x,
+		float(content_rect.y + bsize),
+		base_x + float(content_rect.width),
+		float(content_rect.y + bsize + content_rect.height) };
+
+	if(left_to_right) {
+		d2d_device_context->FillOpacityMask(i.icon_bitmap, display_flags != rendering_modifiers::disabled ? brush_collection[br].brush : brush_collection[br].disabled_brush, D2D1_OPACITY_MASK_CONTENT_GRAPHICS, &dest_rect, nullptr);
+	} else {
+		d2d_device_context->SetTransform(D2D1::Matrix3x2F::Scale(-1.0f, 1.0f, D2D1_POINT_2F{ float(base_x + content_rect.width) / 2.0f, 0.0f }));
+		d2d_device_context->FillOpacityMask(i.icon_bitmap, display_flags != rendering_modifiers::disabled ? brush_collection[br].brush : brush_collection[br].disabled_brush, D2D1_OPACITY_MASK_CONTENT_GRAPHICS, &dest_rect, nullptr);
+		d2d_device_context->SetTransform(D2D1::Matrix3x2F::Identity());
+	}
+
+	
 }
 void win_d2d_dw_ds::set_line_highlight_mode(bool highlight_on) {
 	rendering_as_highlighted_line = highlight_on;
@@ -5482,14 +5780,14 @@ void win_d2d_dw_ds::display_fatal_error_message(native_string_view s) {
 void win_d2d_dw_ds::text_to_clipboard(native_string_view s) {
 	if(OpenClipboard(m_hwnd)) {
 		if(EmptyClipboard()) {
-			size_t byteSize = sizeof(wchar_t) * (txt.length() + 1);
+			size_t byteSize = sizeof(wchar_t) * (s.length() + 1);
 			HGLOBAL hClipboardData = GlobalAlloc(GMEM_DDESHARE | GMEM_MOVEABLE | GMEM_ZEROINIT, byteSize);
 
 			if(hClipboardData != nullptr) {
 				void* memory = GlobalLock(hClipboardData);  // [byteSize] in bytes
 
 				if(memory != nullptr) {
-					memcpy(memory, txt.data(), byteSize);
+					memcpy(memory, s.data(), byteSize);
 					GlobalUnlock(hClipboardData);
 
 					if(SetClipboardData(CF_UNICODETEXT, hClipboardData) != nullptr) {

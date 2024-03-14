@@ -668,7 +668,7 @@ public:
 	virtual void line(screen_space_point start, screen_space_point end, float width, uint16_t brush) = 0;
 	virtual void interactable(screen_space_point location, interactable_state state, uint16_t fg_brush, interactable_orientation o, rendering_modifiers display_flags = rendering_modifiers::none) = 0;
 	virtual void image(image_handle img, screen_space_rect, int32_t sub_slot = 0) = 0;
-	virtual void background(image_handle img, screen_space_rect, layout_rect interior, rendering_modifiers display_flags = rendering_modifiers::none) = 0;
+	virtual void background(image_handle img, uint16_t brush, screen_space_rect, layout_rect interior, rendering_modifiers display_flags = rendering_modifiers::none, int32_t sub_slot = 0) = 0;
 	virtual void icon(icon_handle ico, screen_space_rect, uint16_t br, rendering_modifiers display_flags = rendering_modifiers::none, int32_t sub_slot = 0) = 0;
 	virtual void set_line_highlight_mode(bool highlight_on) = 0;
 

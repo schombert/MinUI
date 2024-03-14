@@ -349,6 +349,7 @@ struct icon_slot_item {
 	}
 	~icon_slot_item() {
 		safe_release(icon_bitmap);
+		safe_release(doc);
 	}
 	void redraw(win_d2d_dw_ds& s);
 };
@@ -357,6 +358,31 @@ struct icon_slot {
 	em x{ 100 };
 	em y{ 100 };
 	std::vector< icon_slot_item> sub_items;
+};
+
+struct image_slot_item {
+	ID2D1Bitmap* img_bitmap = nullptr;
+
+	image_slot_item() = default;
+	image_slot_item(image_slot_item const& o) = delete;
+	image_slot_item(image_slot_item&& o) noexcept {
+		img_bitmap = o.img_bitmap;
+		o.img_bitmap = nullptr;
+	}
+	image_slot_item& operator=(image_slot_item&& o) noexcept {
+		std::swap(img_bitmap, o.img_bitmap);
+		return *this;
+	}
+	~image_slot_item() {
+		safe_release(img_bitmap);
+	}
+	void redraw(win_d2d_dw_ds& s);
+};
+
+struct image_slot {
+	em x{ 100 };
+	em y{ 100 };
+	std::vector< image_slot_item> sub_items;
 };
 
 struct brush_slot {
@@ -498,6 +524,7 @@ class win_d2d_dw_ds : public system_interface {
 public:
 	std::vector<font_data> font_collection;
 	std::vector<icon_slot> icon_collection;
+	std::vector<image_slot> image_collection;
 	std::vector<brush_slot> brush_collection;
 	std::vector< sound_slot> sound_collection;
 	simple_fs::file_system fs;
@@ -717,7 +744,7 @@ public:
 	void line(screen_space_point start, screen_space_point end, float width, uint16_t brush) final;
 	void interactable(screen_space_point location, interactable_state state, uint16_t fg_brush, interactable_orientation o, rendering_modifiers display_flags = rendering_modifiers::none) final;
 	void image(image_handle img, screen_space_rect, int32_t sub_slot = 0) final;
-	void background(image_handle img, screen_space_rect, layout_rect interior, rendering_modifiers display_flags = rendering_modifiers::none) final;
+	void background(image_handle img, uint16_t brush, screen_space_rect, layout_rect interior, rendering_modifiers display_flags = rendering_modifiers::none, int32_t sub_slot = 0) final;
 	void icon(icon_handle ico, screen_space_rect, uint16_t br, rendering_modifiers display_flags = rendering_modifiers::none, int32_t sub_slot = 0) final;
 	void set_line_highlight_mode(bool highlight_on) final;
 
@@ -732,6 +759,8 @@ public:
 	void add_to_icon_slot(icon_handle slot, native_string_view file_name, em x_ems, em y_ems, int32_t sub_index) final;
 	void add_svg_to_icon_slot(icon_handle slot, native_string_view file_name, em x_ems, em y_ems, int32_t sub_index) final;
 	int32_t get_icon_set_size(icon_handle ico) final;
+	void add_to_image_slot(image_handle slot, native_string_view file_name, em x_ems, em y_ems, int32_t sub_index) final;
+	int32_t get_image_set_size(image_handle ico) final;
 
 	void add_color_brush(uint16_t id, brush_color c, bool as_disabled) final;
 	void add_image_color_brush(uint16_t id, native_string_view file_name, brush_color c, bool as_disabled) final;
