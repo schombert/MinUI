@@ -594,6 +594,8 @@ public:
 	ID2D1SolidColorBrush* white_brush = nullptr;
 	ID2D1StrokeStyle* plain_strokes = nullptr;
 
+	std::array<ID2D1Bitmap1*, 128> key_letters = { nullptr };
+
 	ID2D1Factory6* d2d_factory = nullptr;
 	IWICImagingFactory* wic_factory = nullptr;
 
@@ -646,6 +648,9 @@ public:
 		safe_release(d2d_factory);
 
 		safe_release(back_buffer_target);
+
+		for(auto& ptr : key_letters)
+			safe_release(ptr);
 	}
 
 	void create_window(int32_t window_x_size, int32_t window_y_size, bool borderless, bool fullscreen);
@@ -742,7 +747,7 @@ public:
 	void rectangle(screen_space_rect content_rect, rendering_modifiers display_flags, uint16_t brush) final;
 	void empty_rectangle(screen_space_rect content_rect, rendering_modifiers display_flags, uint16_t brush) final;
 	void line(screen_space_point start, screen_space_point end, float width, uint16_t brush) final;
-	void interactable(screen_space_point location, interactable_state state, uint16_t fg_brush, interactable_orientation o, rendering_modifiers display_flags = rendering_modifiers::none) final;
+	void interactable(screen_space_point location, interactable_state state, uint16_t fg_brush, uint16_t hl_brush, uint16_t info_brush, uint16_t bg_brush, interactable_orientation o, rendering_modifiers display_flags = rendering_modifiers::none) final;
 	void image(image_handle img, screen_space_rect, int32_t sub_slot = 0) final;
 	void background(image_handle img, uint16_t brush, screen_space_rect, layout_rect interior, rendering_modifiers display_flags = rendering_modifiers::none, int32_t sub_slot = 0) final;
 	void icon(icon_handle ico, screen_space_rect, uint16_t br, rendering_modifiers display_flags = rendering_modifiers::none, int32_t sub_slot = 0) final;

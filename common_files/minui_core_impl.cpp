@@ -5085,6 +5085,37 @@ bool root::on_mouse_scroll(float amount) {
 
 int32_t map_scancode_to_key(uint32_t in) {
 	switch(in) {
+		case 0:
+			return 0x10;
+		case 1:
+			return 0x11;
+		case 2:
+			return 0x12;
+		case 3:
+			return 0x13;
+		case 4:
+			return 0x1E;
+		case 5:
+			return 0x1F;
+		case 6:
+			return 0x20;
+		case 7:
+			return 0x21;
+		case 8:
+			return 0x2C;
+		case 9:
+			return 0x2D;
+		case 10:
+			return 0x2E;
+		case 11:
+			return 0x2F;
+	}
+	
+	return -1;
+}
+
+int32_t key_to_scancode(int32_t in) {
+	switch(in) {
 		case 0x10:
 			return 0;
 		case 0x11:
@@ -5110,7 +5141,7 @@ int32_t map_scancode_to_key(uint32_t in) {
 		case 0x2F:
 			return 11;
 	}
-	
+
 	return -1;
 }
 

@@ -464,6 +464,113 @@ void win_d2d_dw_ds::recreate_dpi_dependent_resource() {
 			}
 		}
 	}
+
+	//
+	// Create letters for key labels
+	//
+
+	for(auto& ptr : key_letters)
+		safe_release(ptr);
+
+	int32_t scan_codes[] = { 0x10, 0x11, 0x12, 0x13, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1E, 0x1F, 0x20, 0x21, 0x24, 0x25, 0x26, 0x27, 0x2C, 0x2D, 0x2E, 0x2F, 0x31, 0x32, 0x33, 0x34, 0x35 };
+
+	auto cap_height = float(pixels_per_em * 15) / 32.0f;
+
+	IDWriteTextFormat3* label_format_out = nullptr;;
+	IDWriteTextFormat* label_format = nullptr;
+
+	DWRITE_FONT_AXIS_VALUE fax[] = {
+		DWRITE_FONT_AXIS_VALUE{ DWRITE_FONT_AXIS_TAG_WEIGHT, 700.0f },
+		DWRITE_FONT_AXIS_VALUE{ DWRITE_FONT_AXIS_TAG_WIDTH, 100.0f }
+	};
+
+	auto bottom_lead = 2;
+	auto top_lead = 2;
+	auto adjusted_cap_height = std::round(cap_height - (bottom_lead + top_lead) * dpi / 96.0f);
+
+	IDWriteFont3* label_font = nullptr;
+
+	IDWriteFontList2* fl;
+	dw_font_collection->GetMatchingFonts(L"Arial", fax, 2, &fl);
+	fl->GetFont(0, &label_font);
+	safe_release(fl);
+
+	DWRITE_FONT_METRICS metrics;
+	label_font->GetMetrics(&metrics);
+	safe_release(label_font);
+
+	auto adjusted_size = (metrics.capHeight > 0 && metrics.capHeight <= metrics.ascent) ? (adjusted_cap_height * float(metrics.designUnitsPerEm) / float(metrics.capHeight)) : (adjusted_cap_height * float(metrics.designUnitsPerEm) / float(metrics.ascent));
+
+	auto baseline = float(metrics.ascent) * (adjusted_size) / (float(metrics.designUnitsPerEm));
+
+	dwrite_factory->CreateTextFormat(L"Arial", dw_font_collection, DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, adjusted_size, locale_data.app_locale.c_str(), &label_format);
+
+	label_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+	label_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+
+	label_format->QueryInterface(IID_PPV_ARGS(&label_format_out));
+	label_format_out->SetAutomaticFontAxes(DWRITE_AUTOMATIC_FONT_AXES_OPTICAL_SIZE);
+
+	safe_release(label_format);
+
+	for(auto v : scan_codes) {
+		wchar_t keyname[64] = { 0 };
+		auto length = GetKeyNameTextW((v << 16) | 1ui32, keyname, 64);
+		std::wstring text = (length > 0) ? std::wstring(size_t(1), keyname[0]) : std::wstring(L"_");
+		if(text[0] == L'.')
+			text[0] = L'>';
+		if(text[0] == L',')
+			text[0] = L'<';
+		
+		d2d_device_context->CreateBitmap(
+			D2D1_SIZE_U{ uint32_t(pixels_per_em), uint32_t(pixels_per_em) }, nullptr, 0,
+			D2D1_BITMAP_PROPERTIES1{
+				D2D1::PixelFormat(DXGI_FORMAT_A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
+				dpi, dpi, D2D1_BITMAP_OPTIONS_TARGET, nullptr },
+				&(key_letters[v]));
+
+		d2d_device_context->SetTarget(key_letters[v]);
+		d2d_device_context->BeginDraw();
+		d2d_device_context->Clear(D2D1_COLOR_F{ 0.0f, 0.0f, 0.0f, 0.0f });
+
+		d2d_device_context->DrawTextW(text.c_str(), uint32_t(text.length()), label_format_out, D2D1_RECT_F{ 0.0f, float((pixels_per_em - 1) / 2 + (cap_height - 1) / 2) - (baseline + std::round(bottom_lead * dpi / 96.0f)), float(pixels_per_em), float(pixels_per_em) }, solid_brush);
+
+		d2d_device_context->EndDraw();
+	}
+	for(int32_t v = 0; v < 6; ++v) {
+		std::wstring text;
+		switch(v) {
+			case 0:
+				text = L"L"; break;
+			case 1:
+				text = L"R"; break;
+			case 2:
+				text = L"A"; break;
+			case 3:
+				text = L"B"; break;
+			case 4:
+				text = L"X"; break;
+			case 5:
+				text = L"Y"; break;
+		}
+
+		d2d_device_context->CreateBitmap(
+			D2D1_SIZE_U{ uint32_t(pixels_per_em), uint32_t(pixels_per_em) }, nullptr, 0,
+			D2D1_BITMAP_PROPERTIES1{
+				D2D1::PixelFormat(DXGI_FORMAT_A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
+				dpi, dpi, D2D1_BITMAP_OPTIONS_TARGET, nullptr },
+				&(key_letters[v]));
+
+		d2d_device_context->SetTarget(key_letters[v]);
+		d2d_device_context->BeginDraw();
+		d2d_device_context->Clear(D2D1_COLOR_F{ 0.0f, 0.0f, 0.0f, 0.0f });
+
+		d2d_device_context->DrawTextW(text.c_str(), uint32_t(text.length()), label_format_out, D2D1_RECT_F{ 0.0f, float((pixels_per_em - 1) / 2 + (cap_height - 1) / 2) - (baseline + std::round(bottom_lead * dpi / 96.0f)), float(pixels_per_em), float(pixels_per_em) }, solid_brush);
+
+		d2d_device_context->EndDraw();
+	}
+
+	safe_release(label_format_out);
 }
 
 void win_d2d_dw_ds::create_device_resources() {
@@ -1229,7 +1336,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 						control_pos.y += app->window_border_size;
 						ei->move_cursor_by_screen_pt(*app, screen_space_point{ GET_X_LPARAM(lParam) - control_pos.x, GET_Y_LPARAM(lParam) - control_pos.y }, true);
 
-						if(app->minui_root->under_mouse.type_array[size_t(mouse_interactivity::button)].node == f)
+						if(app->minui_root->under_mouse.type_array[size_t(mouse_interactivity::button)].node->get_interface(minui::iface::editable_text) == ei)
 							ei->consume_mouse_event(*app, GET_X_LPARAM(lParam) - control_pos.x, GET_Y_LPARAM(lParam) - control_pos.y, uint32_t(wParam));
 
 						return 0;
@@ -5421,10 +5528,94 @@ void win_d2d_dw_ds::line(screen_space_point start, screen_space_point end, float
 
 	d2d_device_context->DrawLine(D2D1_POINT_2F{ base_x, float(window_border_size + start.y) }, D2D1_POINT_2F{ end_x, float(window_border_size + end.y) }, brush_collection[brush].brush, pixels_per_em * width, plain_strokes);
 }
-void win_d2d_dw_ds::interactable(screen_space_point location, interactable_state state, uint16_t fg_brush, interactable_orientation o, rendering_modifiers display_flags) {
+void win_d2d_dw_ds::interactable(screen_space_point location, interactable_state state, uint16_t fg_brush, uint16_t hl_brush, uint16_t info_brush, uint16_t bg_brush, interactable_orientation o, rendering_modifiers display_flags) {
 
+	if(minui_root->pmode == prompt_mode::hidden)
+		return;
 
-	//TODO
+	auto ibrush = fg_brush;
+	auto tbrush = bg_brush;
+
+	if(display_flags != rendering_modifiers::disabled) {
+		display_flags = rendering_modifiers::none;
+	} else {
+		if(alt_down) {
+			ibrush = info_brush;
+			tbrush = bg_brush;
+		} else if(shift_down) {
+			ibrush = fg_brush;
+			tbrush = hl_brush;
+		} else {
+			ibrush = hl_brush;
+			tbrush = bg_brush;
+		}
+	}
+
+	icon(icon_handle{ 0 }, screen_space_rect{ location.x, location.y, pixels_per_em, pixels_per_em }, ibrush, display_flags, uint8_t(o) + (state.holds_group() ? 4 : 0));
+
+	auto bsize = window_border_size;
+	auto base_x = left_to_right ? float(location.x + bsize) : client_x - (bsize + pixels_per_em + location.x);
+
+	D2D1_RECT_F dest_rect{
+		base_x,
+		float(location.y + bsize),
+		base_x + float(pixels_per_em),
+		float(location.y + bsize + pixels_per_em) };
+	
+	
+	
+	if(minui_root->pmode == prompt_mode::keyboard) {
+		if(state.holds_key()) {
+			auto base_scancode = key_to_scancode(state.get_key());
+			if(base_scancode != -1) {
+				auto resolved_scancode = map_scancode(uint32_t(base_scancode), kb_type);
+				d2d_device_context->FillOpacityMask(key_letters[resolved_scancode], tbrush, D2D1_OPACITY_MASK_CONTENT_TEXT_NATURAL, &dest_rect, nullptr);
+			}
+		}
+	} else if(minui_root->pmode == prompt_mode::controller) {
+		if(state.holds_key()) {
+			int32_t slot = -1;
+			if((controller_buttons_val & to_bitmask(controller_button::lb)) != 0) {
+				switch(state.get_key()) {
+					case 0: slot = 4; break;
+					case 1: slot = 5; break;
+					case 2: slot = 2; break;
+					case 3: slot = 3; break;
+					default: break;
+				}
+			} else if((controller_buttons_val & to_bitmask(controller_button::rb)) != 0) {
+				switch(state.get_key()) {
+					case 8: slot = 4; break;
+					case 9: slot = 5; break;
+					case 10: slot = 2; break;
+					case 11: slot = 3; break;
+					default: break;
+				}
+			} else {
+				switch(state.get_key()) {
+					case 0: slot = 0; break;
+					case 1: slot = 0; break;
+					case 2: slot = 0; break;
+					case 3: slot = 0; break;
+
+					case 4: slot = 4; break;
+					case 5: slot = 5; break;
+					case 6: slot = 2; break;
+					case 7: slot = 3; break;
+
+					case 8: slot = 1; break;
+					case 9: slot = 1; break;
+					case 10: slot = 1; break;
+					case 11: slot = 1; break;
+					default: break;
+				}
+			}
+
+			if(slot != -1) {
+				d2d_device_context->FillOpacityMask(key_letters[slot], tbrush, D2D1_OPACITY_MASK_CONTENT_TEXT_NATURAL, &dest_rect, nullptr);
+			}
+		}
+	}
 }
 void win_d2d_dw_ds::image(image_handle img, screen_space_rect content_rect, int32_t sub_slot) {
 	if(0 > img.value || 0 > sub_slot) {
@@ -5477,7 +5668,7 @@ void win_d2d_dw_ds::background(image_handle img, uint16_t brush, screen_space_re
 		float(content_rect.y + bsize + content_rect.height) };
 
 	if(!left_to_right) {
-		d2d_device_context->SetTransform(D2D1::Matrix3x2F::Scale(-1.0f, 1.0f, D2D1_POINT_2F{ float(base_x + content_rect.width) / 2.0f, 0.0f }));
+		d2d_device_context->SetTransform(D2D1::Matrix3x2F::Scale(-1.0f, 1.0f, D2D1_POINT_2F{ base_x + float(content_rect.width) / 2.0f, 0.0f }));
 	}
 
 	auto bmp_size = i.img_bitmap->GetSize();
@@ -5666,12 +5857,10 @@ void win_d2d_dw_ds::icon(icon_handle ico, screen_space_rect content_rect, uint16
 	if(left_to_right) {
 		d2d_device_context->FillOpacityMask(i.icon_bitmap, display_flags != rendering_modifiers::disabled ? brush_collection[br].brush : brush_collection[br].disabled_brush, D2D1_OPACITY_MASK_CONTENT_GRAPHICS, &dest_rect, nullptr);
 	} else {
-		d2d_device_context->SetTransform(D2D1::Matrix3x2F::Scale(-1.0f, 1.0f, D2D1_POINT_2F{ float(base_x + content_rect.width) / 2.0f, 0.0f }));
+		d2d_device_context->SetTransform(D2D1::Matrix3x2F::Scale(-1.0f, 1.0f, D2D1_POINT_2F{ base_x + float(content_rect.width) / 2.0f, 0.0f }));
 		d2d_device_context->FillOpacityMask(i.icon_bitmap, display_flags != rendering_modifiers::disabled ? brush_collection[br].brush : brush_collection[br].disabled_brush, D2D1_OPACITY_MASK_CONTENT_GRAPHICS, &dest_rect, nullptr);
 		d2d_device_context->SetTransform(D2D1::Matrix3x2F::Identity());
 	}
-
-	
 }
 void win_d2d_dw_ds::set_line_highlight_mode(bool highlight_on) {
 	rendering_as_highlighted_line = highlight_on;
