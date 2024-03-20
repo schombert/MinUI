@@ -1331,9 +1331,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 					if(app->minui_root && app->minui_root->edit_target && app->selecting_edit_text != edit_selection_mode::none) {
 						auto ei = app->minui_root->edit_target;
 						
-						auto control_pos = app->to_screen_space(*static_cast<dw_editable_text_provider*>(ei)->attached);
+						auto control_pos = app->to_screen_space(static_cast<dw_editable_text_provider*>(ei)->attached.position);
 						control_pos.x += app->window_border_size;
 						control_pos.y += app->window_border_size;
+						if(!app->left_to_right)
+							control_pos.x = app->client_x - control_pos.x;
+
 						ei->move_cursor_by_screen_pt(*app, screen_space_point{ GET_X_LPARAM(lParam) - control_pos.x, GET_Y_LPARAM(lParam) - control_pos.y }, true);
 
 						if(app->minui_root->under_mouse.type_array[size_t(mouse_interactivity::button)].node->get_interface(minui::iface::editable_text) == ei)
@@ -1352,7 +1355,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 						 // do nothing
 						break;
 					}
-					if(app->minui_root && app->minui_root->on_mouse_move(layout_position{ app->to_ui_space(float(GET_X_LPARAM(lParam) - app->window_border_size)), app->to_ui_space(float(GET_Y_LPARAM(lParam) - app->window_border_size)) })) {
+					if(app->minui_root && app->minui_root->on_mouse_move(layout_position{ app->to_ui_space(app->left_to_right ? float(GET_X_LPARAM(lParam) - app->window_border_size) : float(app->client_x - GET_X_LPARAM(lParam) - app->window_border_size)), app->to_ui_space(float(GET_Y_LPARAM(lParam) - app->window_border_size)) })) {
 						return 0;
 					}
 					break;
@@ -1543,6 +1546,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 								auto control_pos = app->to_screen_space(f->position);
 								control_pos.x += app->window_border_size;
 								control_pos.y += app->window_border_size;
+								if(!app->left_to_right)
+									control_pos.x = app->client_x - control_pos.x;
 								ei->consume_mouse_event(*app, GET_X_LPARAM(lParam) - control_pos.x, GET_Y_LPARAM(lParam) - control_pos.y, uint32_t(wParam));
 							}
 						}
@@ -1570,6 +1575,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 								auto control_pos = app->to_screen_space(f->position);
 								control_pos.x += app->window_border_size;
 								control_pos.y += app->window_border_size;
+								if(!app->left_to_right)
+									control_pos.x = app->client_x - control_pos.x;
 								ei->consume_mouse_event(*app, GET_X_LPARAM(lParam) - control_pos.x, GET_Y_LPARAM(lParam) - control_pos.y, uint32_t(wParam));
 							}
 						}
@@ -1603,6 +1610,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 								auto control_pos = app->to_screen_space(f->position);
 								control_pos.x += app->window_border_size;
 								control_pos.y += app->window_border_size;
+								if(!app->left_to_right)
+									control_pos.x = app->client_x - control_pos.x;
 								ei->consume_mouse_event(*app, GET_X_LPARAM(lParam) - control_pos.x, GET_Y_LPARAM(lParam) - control_pos.y, uint32_t(wParam));
 
 								if(in_ms.count() <= app->double_click_ms)
@@ -1636,6 +1645,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 								auto control_pos = app->to_screen_space(f->position);
 								control_pos.x += app->window_border_size;
 								control_pos.y += app->window_border_size;
+								if(!app->left_to_right)
+									control_pos.x = app->client_x - control_pos.x;
 								ei->consume_mouse_event(*app, GET_X_LPARAM(lParam) - control_pos.x, GET_Y_LPARAM(lParam) - control_pos.y, uint32_t(wParam));
 								app->selecting_edit_text = edit_selection_mode::word;
 							}

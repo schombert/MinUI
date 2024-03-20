@@ -658,7 +658,7 @@ public:
 	void on_dpi_change(float new_dpi);
 	void reshow_cursor();
 
-	bool get_ltr(bool ltr) const {
+	bool get_ltr(bool ltr) const override {
 		return left_to_right;
 	}
 	std::wstring_view get_app_locale() const {

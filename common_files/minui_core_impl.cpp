@@ -4,6 +4,7 @@
 
 #include <limits>
 #include <algorithm>
+#include <memory>
 
 #ifndef UNICODE
 #define UNICODE
@@ -22,9 +23,6 @@ namespace minui {
 #define minui_aligned_alloc(X, Y) std::aligned_alloc(Y, X)
 #define minui_aligned_free(X) std::free(X)
 #endif
-
-using user_function = void (*)(root& r, ui_node&);
-using user_mouse_function = void (*)(root& r, ui_node&, uint32_t modifiers);
 
 class container_node : public ui_node {
 public:
@@ -92,13 +90,13 @@ struct background_definition {
 	layout_rect exterior_edge_offsets;
 	layout_rect texture_interior_region;
 	uint16_t brush; // if -1, transparent
+	// TODO: BORDERS
 };
 
 class proportional_window : public ui_node {
 public:
 	std::vector<ui_node*> children;
 	std::vector<relative_child_def> child_positions;
-	background_definition background;
 
 	size_t size() const override;
 	void render(root& r, layout_position offset, std::vector<postponed_render>& postponed) override;
@@ -124,7 +122,6 @@ public:
 class space_filler : public ui_node {
 public:
 	std::vector<ui_node*> children;
-	background_definition background;
 
 	size_t size() const override;
 	void render(root& r, layout_position offset, std::vector<postponed_render>& postponed) override;
@@ -160,11 +157,11 @@ struct column_properties {
 struct page_ui_definitions {
 	icon_handle page_icon;
 	em scale = em{ 100 };
-	uint16_t left_button;
-	uint16_t right_button;
-	uint16_t left2_button;
-	uint16_t right2_button;
-	uint16_t text;
+	uint16_t left_button = 0;
+	uint16_t right_button = 0;
+	uint16_t left2_button = 0;
+	uint16_t right2_button = 0;
+	uint16_t text = 0;
 	bool vertical_arrangement = false;
 };
 
@@ -201,7 +198,6 @@ class dynamic_column : public ui_node, imultitype_container {
 public:
 	std::vector<ui_node*> children;
 	std::vector<uint16_t> page_starts;
-	background_definition background;
 	ui_node* page_controls = nullptr;
 
 	uint16_t num_pages = 0;
@@ -245,7 +241,6 @@ public:
 	std::unique_ptr<type_erased_vector> data;
 	uint16_t page_size = 0;
 
-	background_definition background;
 	ui_node* page_controls = nullptr;
 
 	uint16_t num_pages = 0;
@@ -339,7 +334,6 @@ class dynamic_grid : public ui_node, imultitype_container {
 public:
 	std::vector<ui_node*> children;
 	std::vector<uint16_t> page_starts;
-	background_definition background;
 	ui_node* page_controls = nullptr;
 
 	uint16_t num_pages = 0;
@@ -417,7 +411,6 @@ public:
 
 class text_button : public ui_node, icontrol {
 public:
-	background_definition background;
 	std::unique_ptr<static_text_provider> text_data;
 
 	layout_rect margins;
@@ -464,7 +457,6 @@ struct image_information {
 
 class icon_button : public ui_node, icontrol {
 public:
-	background_definition background;
 
 	layout_rect icon_position;
 	bool enabled = true;
@@ -592,18 +584,15 @@ public:
 	}
 };
 
-struct sub_item_definition {
-	uint32_t type = 0;
-	uint32_t data_type = 0;
-};
-
-struct initial_value {
+struct variable_definition {
+	uint16_t variable;
+	uint16_t data_type;
+	uint16_t offset;
 	uint8_t raw_data[8];
-	uint32_t data_id;
 };
-struct initial_value_range {
-	initial_value const* start;
-	initial_value const* end;
+struct variable_definition_range {
+	variable_definition const* start;
+	variable_definition const* end;
 };
 
 class ui_node_disposal {
@@ -662,6 +651,9 @@ enum class resize_type {
 	minimize, maximize, normal
 };
 
+void null_user_function(root&, ui_node&) {
+}
+
 class root {
 private:
 	void load_font_definitions(char const* file_data, size_t file_size);
@@ -703,7 +695,6 @@ public:
 	}
 
 	void render();
-	void load_ui_data();
 
 	ui_node* take_key_action(key_action a); // returns a node if a non-group node is selected
 	void change_focus(ui_node* old_focus, ui_node* new_focus);
@@ -736,46 +727,305 @@ public:
 	em minimum_width();
 	em minimum_height();
 
+	// 
+	// data storage
+	//
+
+	struct array_reference {
+		uint32_t file_offset;
+		uint32_t count;
+	};
+
+	char const* file_base = nullptr;
+	std::unique_ptr<file> defintions_file;
+	uint32_t defined_element_types = 0;
+
+	std::span<const layout_position> d_icon_position;
+	std::span<const layout_rect> d_default_position;
+	std::span<const interactable_definition> d_interactable_definition;
+	std::span<const icon_handle> d_icon;
+	std::span<const uint16_t> d_class;
+	std::span<const uint32_t> d_standard_flags;
+	std::span<const uint16_t> d_foreground_brush;
+	std::span<const uint16_t> d_background_brush;
+	std::span<const uint16_t> d_highlight_brush;
+	std::span<const uint16_t> d_info_brush;
+	ankerl::unordered_dense::map_view<uint32_t, const array_reference> d_fixed_children;
+	ankerl::unordered_dense::map_view<uint32_t, const array_reference> d_window_children;
+	std::span<const array_reference> d_variable_definition;
+	std::span<const uint16_t> d_total_variable_size;
+	std::span<const background_definition> d_background_definition;
+	ankerl::unordered_dense::map_view<uint32_t, const int32_t> d_divider_index;
+	ankerl::unordered_dense::map_view<uint32_t, const bool> d_horizontal_orientation;
+	ankerl::unordered_dense::map_view<uint32_t, const column_properties> d_column_properties;
+	ankerl::unordered_dense::map_view<uint32_t, const page_ui_definitions> d_page_ui_definitions;
+	ankerl::unordered_dense::map_view<uint32_t, const text_information> d_text_information;
+	ankerl::unordered_dense::map_view<uint32_t, const sound_handle> d_interaction_sound;
+	ankerl::unordered_dense::map_view<uint32_t, const image_information> d_image_information;
+
+	ankerl::unordered_dense::map_view<uint32_t, const array_reference> d_on_update_raw;
+	ankerl::unordered_dense::map_view<uint32_t, const array_reference> d_on_gain_focus_raw;
+	ankerl::unordered_dense::map_view<uint32_t, const array_reference> d_on_lose_focus_raw;
+	ankerl::unordered_dense::map_view<uint32_t, const array_reference> d_on_visible_raw;
+	ankerl::unordered_dense::map_view<uint32_t, const array_reference> d_on_hide_raw;
+	ankerl::unordered_dense::map_view<uint32_t, const array_reference> d_on_create_raw;
+	ankerl::unordered_dense::map_view<uint32_t, const array_reference> d_user_fn_a_raw;
+	ankerl::unordered_dense::map_view<uint32_t, const array_reference> d_user_fn_b_raw;
+	ankerl::unordered_dense::map_view<uint32_t, const array_reference> d_user_mouse_fn_a_raw;
+
+	std::vector<user_function> d_on_update;
+	std::vector<user_function> d_on_gain_focus;
+	std::vector<user_function> d_on_lose_focus;
+	std::vector<user_function> d_on_visible;
+	std::vector<user_function> d_on_hide;
+	std::vector<user_function> d_on_create;
+	std::vector<user_function> d_user_fn_a;
+	std::vector<user_function> d_user_fn_b;
+	std::vector<user_function> d_user_mouse_fn_a;
+
 	//
 	// element definitions
 	//
 
-	void load_definitions(char const* data, size_t data_size); // file input -> dynamic definitions
-	layout_position get_icon_position(uint32_t type_id) const;
-	layout_rect get_default_position(uint32_t type_id) const;
-	interactable_definition get_interactable_definition(uint32_t type_id) const;
-	icon_handle get_icon(uint32_t type_id) const;
-	uint32_t get_class(uint32_t type_id) const;
-	uint32_t get_standard_flags(uint32_t type_id) const;
-	uint16_t get_foreground_brush(uint32_t type_id) const;
-	uint16_t get_background_brush(uint32_t type_id) const;
-	uint16_t get_highlight_brush(uint32_t type_id) const;
-	uint16_t get_info_brush(uint32_t type_id) const;
-	type_range get_fixed_children(uint32_t type_id) const;
-	relative_child_range get_window_children(uint32_t type_id) const;
-	initial_value_range get_initial_values(uint32_t type_id) const;
-	int32_t get_variable_offset(uint32_t type_id, uint32_t data_type_id) const;
-	type_range get_variable_types(uint32_t type_id) const;
-	uint32_t get_total_variable_size(uint32_t type_id) const;
-	background_definition get_background_definition(uint32_t type_id) const;
-	int32_t get_divider_index(uint32_t type_id) const;
-	bool get_horizontal_orientation(uint32_t type_id) const;
-	column_properties get_column_properties(uint32_t type_id) const;
-	page_ui_definitions get_page_ui_definitions(uint32_t type_id) const;
-	sub_item_definition get_sub_item_definition(uint32_t type_id) const;
-	text_information get_text_information(uint32_t type_id);
-	sound_handle get_interaction_sound(uint32_t type_id);
-	image_information get_image_information(uint32_t type_id);
+	void load_definitions_from_file(std::unique_ptr<file> df) {
+		defintions_file = std::move(df);
+		load_definitions(df->data(), df->size());
+	}
+	void load_definitions(char const* data, size_t size);
+	layout_position get_icon_position(uint32_t type_id) const {
+		return d_icon_position[type_id];
+	}
+	layout_rect get_default_position(uint32_t type_id) const {
+		return d_default_position[type_id];
+	}
+	interactable_definition get_interactable_definition(uint32_t type_id) const {
+		return d_interactable_definition[type_id];
+	}
+	icon_handle get_icon(uint32_t type_id) const {
+		return d_icon[type_id];
+	}
+	uint32_t get_class(uint32_t type_id) const {
+		return d_class[type_id];
+	}
+	uint32_t get_standard_flags(uint32_t type_id) const {
+		return d_standard_flags[type_id];
+	}
+	uint16_t get_foreground_brush(uint32_t type_id) const {
+		return d_foreground_brush[type_id];
+	}
+	uint16_t get_background_brush(uint32_t type_id) const {
+		return d_background_brush[type_id];
+	}
+	uint16_t get_highlight_brush(uint32_t type_id) const {
+		return d_highlight_brush[type_id];
+	}
+	uint16_t get_info_brush(uint32_t type_id) const {
+		return d_info_brush[type_id];
+	}
+	type_range get_fixed_children(uint32_t type_id) const {
+		auto r = d_fixed_children.atomic_find(type_id);
+		if(r) {
+			array_reference t = *r;
+			return type_range{ (uint32_t const*)(file_base + t.file_offset), (uint32_t const*)(file_base + t.file_offset) + t.count };
+		} else {
+			return type_range{ nullptr, nullptr };
+		}
+	}
+	relative_child_range get_window_children(uint32_t type_id) const {
+		auto r = d_fixed_children.atomic_find(type_id);
+		if(r) {
+			array_reference t = *r;
+			return relative_child_range{ (relative_child_def const*)(file_base + t.file_offset), (relative_child_def const*)(file_base + t.file_offset) + t.count };
+		} else {
+			return relative_child_range{ nullptr, nullptr };
+		}
+	}
+	variable_definition_range get_variable_definition(uint32_t type_id) const {
+		auto t = d_variable_definition[type_id];
+		return variable_definition_range{ (variable_definition const*)(file_base + t.file_offset), (variable_definition const*)(file_base + t.file_offset) + t.count };
+	}
+	uint32_t get_total_variable_size(uint32_t type_id) const {
+		return d_total_variable_size[type_id];
+	}
+	background_definition get_background_definition(uint32_t type_id) const {
+		return d_background_definition[type_id];
+	}
+	int32_t get_divider_index(uint32_t type_id) const {
+		auto r = d_divider_index(type_id);
+		if(r)
+			return *r;
+		else 
+			return 0;
+	}
+	bool get_horizontal_orientation(uint32_t type_id) const {
+		auto r = d_horizontal_orientation(type_id);
+		if(r)
+			return *r;
+		else
+			return false;
+	}
+	column_properties get_column_properties(uint32_t type_id) const {
+		auto r = d_column_properties(type_id);
+		if(r)
+			return *r;
+		else
+			return column_properties{ };
+	}
+	page_ui_definitions get_page_ui_definitions(uint32_t type_id) const {
+		auto r = d_page_ui_definitions(type_id);
+		if(r)
+			return *r;
+		else
+			return page_ui_definitions{ };
+	}
+	text_information get_text_information(uint32_t type_id) const {
+		auto r = d_text_information(type_id);
+		if(r)
+			return *r;
+		else
+			return text_information{ };
+	}
+	sound_handle get_interaction_sound(uint32_t type_id) const {
+		auto r = d_interaction_sound(type_id);
+		if(r)
+			return *r;
+		else
+			return sound_handle{ };
+	}
+	image_information get_image_information(uint32_t type_id) {
+		auto r = d_image_information(type_id);
+		if(r)
+			return *r;
+		else
+			return image_information{ };
+	}
 
-	user_function get_on_update(uint32_t type_id);
-	user_function get_on_gain_focus(uint32_t type_id);
-	user_function get_on_lose_focus(uint32_t type_id);
-	user_function get_on_visible(uint32_t type_id);
-	user_function get_on_hide(uint32_t type_id);
-	user_function get_on_create(uint32_t type_id);
-	user_function get_user_fn_a(uint32_t type_id);
-	user_function get_user_fn_b(uint32_t type_id);
-	user_function get_user_mouse_fn_a(uint32_t type_id);
+	user_function get_on_update(uint32_t type_id) {
+		if(auto f = d_on_update[type_id]; f) {
+			return f;
+		} else if(auto fr = d_on_update_raw.atomic_find(type_id); fr) {
+			auto g = lookup_function(std::string_view(file_base + (*fr).file_offset, (*fr).count));
+			if(!g)
+				g = null_user_function;
+			d_on_update[type_id] = g;
+			return g;
+		} else {
+			d_on_update[type_id] = null_user_function;
+			return null_user_function;
+		}
+	}
+	user_function get_on_gain_focus(uint32_t type_id) {
+		if(auto f = d_on_gain_focus[type_id]; f) {
+			return f;
+		} else if(auto fr = d_on_gain_focus_raw.atomic_find(type_id); fr) {
+			auto g = lookup_function(std::string_view(file_base + (*fr).file_offset, (*fr).count));
+			if(!g)
+				g = null_user_function;
+			d_on_gain_focus[type_id] = g;
+			return g;
+		} else {
+			d_on_gain_focus[type_id] = null_user_function;
+			return null_user_function;
+		}
+	}
+	user_function get_on_lose_focus(uint32_t type_id) {
+		if(auto f = d_on_lose_focus[type_id]; f) {
+			return f;
+		} else if(auto fr = d_on_lose_focus_raw.atomic_find(type_id); fr) {
+			auto g = lookup_function(std::string_view(file_base + (*fr).file_offset, (*fr).count));
+			if(!g)
+				g = null_user_function;
+			d_on_lose_focus[type_id] = g;
+			return g;
+		} else {
+			d_on_lose_focus[type_id] = null_user_function;
+			return null_user_function;
+		}
+	}
+	user_function get_on_visible(uint32_t type_id) {
+		if(auto f = d_on_visible[type_id]; f) {
+			return f;
+		} else if(auto fr = d_on_visible_raw.atomic_find(type_id); fr) {
+			auto g = lookup_function(std::string_view(file_base + (*fr).file_offset, (*fr).count));
+			if(!g)
+				g = null_user_function;
+			d_on_visible[type_id] = g;
+			return g;
+		} else {
+			d_on_visible[type_id] = null_user_function;
+			return null_user_function;
+		}
+	}
+	user_function get_on_hide(uint32_t type_id) {
+		if(auto f = d_on_hide[type_id]; f) {
+			return f;
+		} else if(auto fr = d_on_hide_raw.atomic_find(type_id); fr) {
+			auto g = lookup_function(std::string_view(file_base + (*fr).file_offset, (*fr).count));
+			if(!g)
+				g = null_user_function;
+			d_on_hide[type_id] = g;
+			return g;
+		} else {
+			d_on_hide[type_id] = null_user_function;
+			return null_user_function;
+		}
+	}
+	user_function get_on_create(uint32_t type_id) {
+		if(auto f = d_on_create[type_id]; f) {
+			return f;
+		} else if(auto fr = d_on_create_raw.atomic_find(type_id); fr) {
+			auto g = lookup_function(std::string_view(file_base + (*fr).file_offset, (*fr).count));
+			if(!g)
+				g = null_user_function;
+			d_on_create[type_id] = g;
+			return g;
+		} else {
+			d_on_create[type_id] = null_user_function;
+			return null_user_function;
+		}
+	}
+	user_function get_user_fn_a(uint32_t type_id) {
+		if(auto f = d_user_fn_a[type_id]; f) {
+			return f;
+		} else if(auto fr = d_user_fn_a_raw.atomic_find(type_id); fr) {
+			auto g = lookup_function(std::string_view(file_base + (*fr).file_offset, (*fr).count));
+			if(!g)
+				g = null_user_function;
+			d_user_fn_a[type_id] = g;
+			return g;
+		} else {
+			d_user_fn_a[type_id] = null_user_function;
+			return null_user_function;
+		}
+	}
+	user_function get_user_fn_b(uint32_t type_id) {
+		if(auto f = d_user_fn_b[type_id]; f) {
+			return f;
+		} else if(auto fr = d_user_fn_b_raw.atomic_find(type_id); fr) {
+			auto g = lookup_function(std::string_view(file_base + (*fr).file_offset, (*fr).count));
+			if(!g)
+				g = null_user_function;
+			d_user_fn_b[type_id] = g;
+			return g;
+		} else {
+			d_user_fn_b[type_id] = null_user_function;
+			return null_user_function;
+		}
+	}
+	user_function get_user_mouse_fn_a(uint32_t type_id) {
+		if(auto f = d_user_mouse_fn_a[type_id]; f) {
+			return f;
+		} else if(auto fr = d_user_mouse_fn_a_raw.atomic_find(type_id); fr) {
+			auto g = lookup_function(std::string_view(file_base + (*fr).file_offset, (*fr).count));
+			if(!g)
+				g = null_user_function;
+			d_user_mouse_fn_a[type_id] = g;
+			return g;
+		} else {
+			d_user_mouse_fn_a[type_id] = null_user_function;
+			return null_user_function;
+		}
+	}
 
 	void initialize_members(ui_node*) const;
 	void destroy_members(ui_node*) const;
@@ -789,7 +1039,15 @@ public:
 
 namespace impl {
 char* get_local_data(root& r, ui_node* n, uint32_t data_type) {
-	auto offset = r.get_variable_offset(n->type_id, data_type);
+	int32_t offset = -1;
+	auto vrang = r.get_variable_definition(n->type_id);
+	for(auto i = vrang.start; i != vrang.end; ++i) {
+		if(i->data_type == data_type) {
+			offset = (i->offset & 0x7FFF);
+			break;
+		}
+	}
+
 	if(offset < 0)
 		return nullptr;
 
@@ -800,7 +1058,15 @@ char* get_local_data(root& r, ui_node* n, uint32_t data_type) {
 	return variable;
 }
 char const* get_local_data(root& r, ui_node const* n, uint32_t data_type) {
-	auto offset = r.get_variable_offset(n->type_id, data_type);
+	int32_t offset = -1;
+	auto vrang = r.get_variable_definition(n->type_id);
+	for(auto i = vrang.start; i != vrang.end; ++i) {
+		if(i->data_type == data_type) {
+			offset = (i->offset & 0x7FFF);
+			break;
+		}
+	}
+
 	if(offset < 0)
 		return nullptr;
 
@@ -817,16 +1083,12 @@ void root::initialize_members(ui_node* n) const {
 	auto data = address + n->size();
 
 	auto type = n->type_id;
-	auto members = get_variable_types(type);
-	for(; members.start != members.end; ++members.start) {
-		auto offset = get_variable_offset(type, *(members.start));
-		run_datatype_constructor(data + offset * 8, *(members.start));
-	}
-
-	auto ivs = get_initial_values(type);
-	for(; ivs.start != ivs.end; ++ivs.start) {
-		auto offset = get_variable_offset(type, ivs.start->data_id);
-		memcpy(data + offset * 8, ivs.start->raw_data, 8);
+	auto members = get_variable_definition(type);
+	for(auto i = members.start; i != members.end; ++i) {
+		if((i->offset & 0x8000) == 0)
+			run_datatype_constructor(data + (i->offset & 0x7FFF) * 8, i->data_type);
+		else
+			memcpy(data + (i->offset & 0x7FFF) * 8, i->raw_data, 8);
 	}
 }
 void root::destroy_members(ui_node* n) const {
@@ -834,10 +1096,10 @@ void root::destroy_members(ui_node* n) const {
 	auto data = address + n->size();
 
 	auto type = n->type_id;
-	auto members = get_variable_types(type);
-	for(; members.start != members.end; ++members.start) {
-		auto offset = get_variable_offset(type, *(members.start));
-		run_datatype_destructor(data + offset * 8, *(members.start));
+	auto type = n->type_id;
+	auto members = get_variable_definition(type);
+	for(auto i = members.start; i != members.end; ++i) {
+		run_datatype_destructor(data + (i->offset & 0x7FFF) * 8, i->data_type);
 	}
 }
 
@@ -4561,7 +4823,8 @@ void edit_control::render(root& r, layout_position offset, std::vector<postponed
 
 	r.system.empty_rectangle(
 		screen_space_rect{ r.system.to_screen_space(offset.x), r.system.to_screen_space(offset.y), r.system.to_screen_space(position.width), r.system.to_screen_space(position.height) },
-		((ui_node::behavior_flags & behavior::visually_interactable) != 0 && r.under_mouse.type_array[size_t(mouse_interactivity::position)].node == this) ? rendering_modifiers::highlighted : rendering_modifiers::none);
+		((ui_node::behavior_flags & behavior::visually_interactable) != 0 && r.under_mouse.type_array[size_t(mouse_interactivity::position)].node == this) ? rendering_modifiers::highlighted : rendering_modifiers::none,
+		r.get_background_brush(type_id));
 
 	auto ico_pos = r.get_icon_position(ui_node::type_id);
 
@@ -4944,7 +5207,10 @@ bool root::on_mouse_lbutton(click_type t) {
 	if(node) {
 		if(auto ei = node->get_interface(iface::editable_text); ei) {
 			auto iedit = static_cast<ieditable_text*>(ei);
-			auto rel_pos = system.to_screen_space(latest_mouse_position - workspace_placement(*node));
+			auto rel_pos_base = latest_mouse_position - workspace_placement(*node);
+			if(!system.get_ltr())
+				rel_pos_base.x = node->position.width - rel_pos_base.x;
+			auto rel_pos = system.to_screen_space(rel_pos_base);
 			iedit->move_cursor_by_screen_pt(system, rel_pos, shift_down);
 
 			if(t == click_type::singlec) {
@@ -5242,6 +5508,167 @@ bool root::on_key_up(uint32_t scancode, uint32_t vk_code) {
 	}
 
 	return true;
+}
+
+void root::load_definitions(char const* data, size_t size) {
+	file_base = data;
+
+	serialization::in_buffer buf(data, size);
+
+	defined_element_types = buf.read<uint32_t>();
+	d_on_update.resize(defined_element_types, nullptr);
+	d_on_gain_focus.resize(defined_element_types, nullptr);
+	d_on_lose_focus.resize(defined_element_types, nullptr);
+	d_on_visible.resize(defined_element_types, nullptr);
+	d_on_hide.resize(defined_element_types, nullptr);
+	d_on_create.resize(defined_element_types, nullptr);
+	d_user_fn_a.resize(defined_element_types, nullptr);
+	d_user_fn_b.resize(defined_element_types, nullptr);
+	d_user_mouse_fn_a.resize(defined_element_types, nullptr);
+
+	auto d_fixed_children_buckets = buf.read<uint32_t>();
+	auto d_fixed_children_content = buf.read<uint32_t>();
+	auto d_window_children_buckets = buf.read<uint32_t>();
+	auto d_window_children_content = buf.read<uint32_t>();
+	auto d_divider_index_buckets = buf.read<uint32_t>();
+	auto d_divider_index_content = buf.read<uint32_t>();
+	auto d_horizontal_orientation_buckets = buf.read<uint32_t>();
+	auto d_horizontal_orientation_content = buf.read<uint32_t>();
+	auto d_column_properties_buckets = buf.read<uint32_t>();
+	auto d_column_properties_content = buf.read<uint32_t>();
+	auto d_page_ui_definitions_buckets = buf.read<uint32_t>();
+	auto d_page_ui_definitions_content = buf.read<uint32_t>();
+	auto d_text_information_buckets = buf.read<uint32_t>();
+	auto d_text_information_content = buf.read<uint32_t>();
+	auto d_interaction_sound_buckets = buf.read<uint32_t>();
+	auto d_interaction_sound_content = buf.read<uint32_t>();
+	auto d_image_information_buckets = buf.read<uint32_t>();
+	auto d_image_information_content = buf.read<uint32_t>();
+	auto d_on_update_raw_buckets = buf.read<uint32_t>();
+	auto d_on_update_raw_content = buf.read<uint32_t>();
+	auto d_on_gain_focus_raw_buckets = buf.read<uint32_t>();
+	auto d_on_gain_focus_raw_content = buf.read<uint32_t>();
+	auto d_on_lose_focus_raw_buckets = buf.read<uint32_t>();
+	auto d_on_lose_focus_raw_content = buf.read<uint32_t>();
+	auto d_on_visible_raw_buckets = buf.read<uint32_t>();
+	auto d_on_visible_raw_content = buf.read<uint32_t>();
+	auto d_on_hide_raw_buckets = buf.read<uint32_t>();
+	auto d_on_hide_raw_content = buf.read<uint32_t>();
+	auto d_on_create_raw_buckets = buf.read<uint32_t>();
+	auto d_on_create_raw_content = buf.read<uint32_t>();
+	auto d_user_fn_a_raw_buckets = buf.read<uint32_t>();
+	auto d_user_fn_a_raw_content = buf.read<uint32_t>();
+	auto d_user_fn_b_raw_buckets = buf.read<uint32_t>();
+	auto d_user_fn_b_raw_content = buf.read<uint32_t>();
+	auto d_user_mouse_fn_a_raw_buckets = buf.read<uint32_t>();
+	auto d_user_mouse_fn_a_raw_content = buf.read<uint32_t>();
+
+	d_icon_position = buf.read_fixed<layout_position>(defined_element_types);
+	d_default_position = buf.read_fixed<layout_rect>(defined_element_types);
+	d_interactable_definition = buf.read_fixed<interactable_definition>(defined_element_types);
+	d_icon = buf.read_fixed<icon_handle>(defined_element_types);
+	d_class = buf.read_fixed<uint16_t>(defined_element_types);
+	d_standard_flags = buf.read_fixed<uint32_t>(defined_element_types);
+	d_foreground_brush = buf.read_fixed<uint16_t>(defined_element_types);
+	d_background_brush = buf.read_fixed<uint16_t>(defined_element_types);
+	d_highlight_brush = buf.read_fixed<uint16_t>(defined_element_types);
+	d_info_brush = buf.read_fixed<uint16_t>(defined_element_types);
+
+	{
+		auto cspan = buf.read_fixed<decltype(d_fixed_children)::value_container_type>(d_fixed_children_content);
+		auto bspan = buf.read_fixed<decltype(d_fixed_children)::bucket_type>(d_fixed_children_buckets);
+		d_fixed_children = decltype(d_fixed_children)(cspan, bspan);
+	}
+	{
+		auto cspan = buf.read_fixed<decltype(d_window_children)::value_container_type>(d_window_children_content);
+		auto bspan = buf.read_fixed<decltype(d_window_children)::bucket_type>(d_window_children_buckets);
+		d_window_children = decltype(d_window_children)(cspan, bspan);
+	}
+
+	d_variable_definition = buf.read_fixed<array_reference>(defined_element_types);
+	d_total_variable_size = buf.read_fixed<uint16_t>(defined_element_types);
+	d_background_definition = buf.read_fixed<background_definition>(defined_element_types);
+
+	{
+		auto cspan = buf.read_fixed<decltype(d_divider_index)::value_container_type>(d_divider_index_content);
+		auto bspan = buf.read_fixed<decltype(d_divider_index)::bucket_type>(d_divider_index_buckets);
+		d_divider_index = decltype(d_divider_index)(cspan, bspan);
+	}
+	{
+		auto cspan = buf.read_fixed<decltype(d_horizontal_orientation)::value_container_type>(d_horizontal_orientation_content);
+		auto bspan = buf.read_fixed<decltype(d_horizontal_orientation)::bucket_type>(d_horizontal_orientation_buckets);
+		d_horizontal_orientation = decltype(d_horizontal_orientation)(cspan, bspan);
+	}
+	{
+		auto cspan = buf.read_fixed<decltype(d_column_properties)::value_container_type>(d_column_properties_content);
+		auto bspan = buf.read_fixed<decltype(d_column_properties)::bucket_type>(d_column_properties_buckets);
+		d_column_properties = decltype(d_column_properties)(cspan, bspan);
+	}
+	{
+		auto cspan = buf.read_fixed<decltype(d_page_ui_definitions)::value_container_type>(d_page_ui_definitions_content);
+		auto bspan = buf.read_fixed<decltype(d_page_ui_definitions)::bucket_type>(d_page_ui_definitions_buckets);
+		d_page_ui_definitions = decltype(d_page_ui_definitions)(cspan, bspan);
+	}
+	{
+		auto cspan = buf.read_fixed<decltype(d_text_information)::value_container_type>(d_text_information_content);
+		auto bspan = buf.read_fixed<decltype(d_text_information)::bucket_type>(d_text_information_buckets);
+		d_text_information = decltype(d_text_information)(cspan, bspan);
+	}
+	{
+		auto cspan = buf.read_fixed<decltype(d_interaction_sound)::value_container_type>(d_interaction_sound_content);
+		auto bspan = buf.read_fixed<decltype(d_interaction_sound)::bucket_type>(d_interaction_sound_buckets);
+		d_interaction_sound = decltype(d_interaction_sound)(cspan, bspan);
+	}
+	{
+		auto cspan = buf.read_fixed<decltype(d_image_information)::value_container_type>(d_image_information_content);
+		auto bspan = buf.read_fixed<decltype(d_image_information)::bucket_type>(d_image_information_buckets);
+		d_image_information = decltype(d_image_information)(cspan, bspan);
+	}
+	{
+		auto cspan = buf.read_fixed<decltype(d_on_update_raw)::value_container_type>(d_on_update_raw_content);
+		auto bspan = buf.read_fixed<decltype(d_on_update_raw)::bucket_type>(d_on_update_raw_buckets);
+		d_on_update_raw = decltype(d_on_update_raw)(cspan, bspan);
+	}
+	{
+		auto cspan = buf.read_fixed<decltype(d_on_gain_focus_raw)::value_container_type>(d_on_gain_focus_raw_content);
+		auto bspan = buf.read_fixed<decltype(d_on_gain_focus_raw)::bucket_type>(d_on_gain_focus_raw_buckets);
+		d_on_gain_focus_raw = decltype(d_on_gain_focus_raw)(cspan, bspan);
+	}
+	{
+		auto cspan = buf.read_fixed<decltype(d_on_lose_focus_raw)::value_container_type>(d_on_lose_focus_raw_content);
+		auto bspan = buf.read_fixed<decltype(d_on_lose_focus_raw)::bucket_type>(d_on_lose_focus_raw_buckets);
+		d_on_lose_focus_raw = decltype(d_on_lose_focus_raw)(cspan, bspan);
+	}
+	{
+		auto cspan = buf.read_fixed<decltype(d_on_visible_raw)::value_container_type>(d_on_visible_raw_content);
+		auto bspan = buf.read_fixed<decltype(d_on_visible_raw)::bucket_type>(d_on_visible_raw_buckets);
+		d_on_visible_raw = decltype(d_on_visible_raw)(cspan, bspan);
+	}
+	{
+		auto cspan = buf.read_fixed<decltype(d_on_hide_raw)::value_container_type>(d_on_hide_raw_content);
+		auto bspan = buf.read_fixed<decltype(d_on_hide_raw)::bucket_type>(d_on_hide_raw_buckets);
+		d_on_hide_raw = decltype(d_on_hide_raw)(cspan, bspan);
+	}
+	{
+		auto cspan = buf.read_fixed<decltype(d_on_create_raw)::value_container_type>(d_on_create_raw_content);
+		auto bspan = buf.read_fixed<decltype(d_on_create_raw)::bucket_type>(d_on_create_raw_buckets);
+		d_on_create_raw = decltype(d_on_create_raw)(cspan, bspan);
+	}
+	{
+		auto cspan = buf.read_fixed<decltype(d_user_fn_a_raw)::value_container_type>(d_user_fn_a_raw_content);
+		auto bspan = buf.read_fixed<decltype(d_user_fn_a_raw)::bucket_type>(d_user_fn_a_raw_buckets);
+		d_user_fn_a_raw = decltype(d_user_fn_a_raw)(cspan, bspan);
+	}
+	{
+		auto cspan = buf.read_fixed<decltype(d_user_fn_b_raw)::value_container_type>(d_user_fn_b_raw_content);
+		auto bspan = buf.read_fixed<decltype(d_user_fn_b_raw)::bucket_type>(d_user_fn_b_raw_buckets);
+		d_user_fn_b_raw = decltype(d_user_fn_b_raw)(cspan, bspan);
+	}
+	{
+		auto cspan = buf.read_fixed<decltype(d_user_mouse_fn_a_raw)::value_container_type>(d_user_mouse_fn_a_raw_content);
+		auto bspan = buf.read_fixed<decltype(d_user_mouse_fn_a_raw)::bucket_type>(d_user_mouse_fn_a_raw_buckets);
+		d_user_mouse_fn_a_raw = decltype(d_user_mouse_fn_a_raw)(cspan, bspan);
+	}
 }
 
 #undef minui_aligned_alloc

@@ -582,6 +582,7 @@ public:
 class system_interface {
 public:
 	virtual void register_root(root& r) = 0;
+
 	// WINDOW FUNCTIONS
 	virtual layout_position get_workspace() const = 0;
 	virtual void hide_mouse_cursor() = 0;
@@ -597,6 +598,7 @@ public:
 	virtual void minimize() = 0;
 	virtual void restore() = 0;
 	virtual void close() = 0;
+	virtual bool get_ltr() const = 0;
 	virtual void set_window_title(native_char const* t) = 0;
 	virtual bool window_has_focus() const = 0;
 
@@ -849,11 +851,14 @@ public:
 };
 
 
+using user_function = void (*)(root& r, ui_node&);
+
 uint32_t defined_datatypes();
 uint32_t datatype_size(uint32_t data_type_id);
 void run_datatype_constructor(char* address, uint32_t data_type_id);
 void run_datatype_destructor(char* address, uint32_t data_type_id);
 std::unique_ptr<type_erased_vector> make_vector_of(uint32_t data_type_id);
+user_function lookup_function(std::string_view name);
 
 namespace impl { // to be wrapped in a generated hpp file mapping to the appropriate types
 char* get_local_data(root& r, ui_node*, uint32_t data_type);
