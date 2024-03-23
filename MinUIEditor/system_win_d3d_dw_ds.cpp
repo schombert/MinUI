@@ -281,7 +281,7 @@ void win_d2d_dw_ds::add_font_fallback(text::font_handle slot, text::font_fallbac
 	font_collection[slot.id].fallbacks.push_back(std::move(font_object));
 }
 void win_d2d_dw_ds::add_localization_file(native_string_view file_name) {
-
+	// TODO
 }
 
 UINT GetGrouping(WCHAR const* locale) {

@@ -5515,6 +5515,70 @@ void root::load_definitions(char const* data, size_t size) {
 
 	serialization::in_buffer buf(data, size);
 
+	auto num_sounds = buf.read<uint16_t>();
+
+	for(uint32_t i = 0; i < num_sounds; ++i) {
+		sound_handle h{ int32_t(i) };
+		system.load_sound(h, buf.read<std::wstring_view>());
+	}
+
+	auto num_brush = buf.read<uint16_t>();
+
+	for(uint16_t i = 0; i < num_brush; ++i) {
+		// regular slot
+		{
+			bool color_brush = buf.read<bool>();
+			if(color_brush) {
+				auto c = buf.read< brush_color>();
+				system.add_color_brush(i, c, false);
+			} else {
+				auto c = buf.read< brush_color>();
+				system.add_image_color_brush(i, buf.read<std::wstring_view>(), c, false);
+			}
+		}
+		// disabled slot
+		{
+			bool color_brush = buf.read<bool>();
+			if(color_brush) {
+				auto c = buf.read< brush_color>();
+				system.add_color_brush(i, c, true);
+			} else {
+				auto c = buf.read< brush_color>();
+				system.add_image_color_brush(i, buf.read<std::wstring_view>(), c, true);
+			}
+		}
+		// highlights
+		float line_shading = buf.read<float>();
+		float highlight_shading = buf.read<float>(); 
+		float line_highlight_shading = buf.read<float>();
+		system.set_brush_highlights(i, line_shading, highlight_shading, line_highlight_shading);
+	}
+
+	auto num_icons = buf.read<uint16_t>();
+	for(uint32_t i = 0; i < num_icons; ++i) {
+		icon_handle slot = icon_handle{ buf.read<int16_t>() };
+		int32_t sub_index = buf.read<int16_t>();
+		auto x_ems = buf.read<em>();
+		auto y_ems = buf.read<em>();
+		auto fn = buf.read<std::wstring_view>();
+		bool is_svg = buf.read<bool>();
+		if(is_svg) {
+			system.add_svg_to_icon_slot(slot, fn, x_ems, y_ems, sub_index);
+		} else {
+			system.add_to_icon_slot(slot, fn, x_ems, y_ems, sub_index);
+		}
+	}
+
+	auto num_images = buf.read<uint16_t>();
+	for(uint32_t i = 0; i < num_images; ++i) {
+		image_handle slot = image_handle{ buf.read<int16_t>() };
+		int32_t sub_index = buf.read<int16_t>();
+		auto x_ems = buf.read<em>();
+		auto y_ems = buf.read<em>();
+		auto fn = buf.read<std::wstring_view>();
+		system.add_to_image_slot(slot, fn, x_ems, y_ems, sub_index);
+	}
+
 	defined_element_types = buf.read<uint32_t>();
 	d_on_update.resize(defined_element_types, nullptr);
 	d_on_gain_focus.resize(defined_element_types, nullptr);
