@@ -62,6 +62,12 @@ public:
 		write(placeholder);
 		pending_writes.emplace_back(reloc_address, std::move(f));
 	}
+	void write_relocation(size_t reloc_address, std::function<void(out_buffer&)>&& f) {
+		pending_writes.emplace_back(reloc_address, std::move(f));
+	}
+	size_t get_data_position() const { 
+		return data_.size();
+	}
 	void write(std::string_view sv) {
 		write_variable(sv.data(), sv.length());
 	}

@@ -838,9 +838,11 @@ private:
     static_assert(std::is_trivially_destructible_v<Bucket>, "assert there's no need to call destructor / std::destroy");
     static_assert(std::is_trivially_copyable_v<Bucket>, "assert we can just memset / memcpy");
 
+public:
     value_container_type m_values{}; // Contains all the key-value pairs in one densely stored container. No holes.
     using bucket_pointer = typename std::allocator_traits<bucket_alloc>::pointer;
     bucket_pointer m_buckets{};
+private:
     size_t m_num_buckets = 0;
     size_t m_max_bucket_capacity = 0;
     float m_max_load_factor = default_max_load_factor;

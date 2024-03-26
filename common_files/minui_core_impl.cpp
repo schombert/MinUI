@@ -69,29 +69,6 @@ inline float to_float(relative_to v) {
 		case relative_to::three_fourths: return 0.75f;
 	}
 }
-struct relative_child_def {
-	relative_to x_start_base;
-	em x_start_offset;
-	relative_to x_end_base;
-	em x_end_offset;
-
-	relative_to y_start_base;
-	em y_start_offset;
-	relative_to y_end_base;
-	em y_end_offset;
-};
-struct relative_child_range {
-	relative_child_def const* start;
-	relative_child_def const* end;
-};
-
-struct background_definition {
-	image_handle image; // if -1, use brush instead
-	layout_rect exterior_edge_offsets;
-	layout_rect texture_interior_region;
-	uint16_t brush; // if -1, transparent
-	// TODO: BORDERS
-};
 
 class proportional_window : public ui_node {
 public:
@@ -141,28 +118,6 @@ public:
 	interactable_definition interactable_layout(root& r) override {
 		return r.get_interactable_definition(ui_node::type_id);
 	}
-};
-
-enum class column_layout : uint8_t {
-	top, centered, bottom
-};
-
-struct column_properties {
-	em minimum_width; // per column
-	int8_t number_of_columns = 1; 
-	column_layout layout = column_layout::top;
-	bool enhance_line_visibility = false;
-};
-
-struct page_ui_definitions {
-	icon_handle page_icon;
-	em scale = em{ 100 };
-	uint16_t left_button = 0;
-	uint16_t right_button = 0;
-	uint16_t left2_button = 0;
-	uint16_t right2_button = 0;
-	uint16_t text = 0;
-	bool vertical_arrangement = false;
 };
 
 class page_controls : public ui_node {
@@ -371,16 +326,6 @@ public:
 	void repaginate(root& r);
 };
 
-struct text_information {
-	layout_rect margins;
-
-	text::font_handle font;
-	text::handle default_text;
-	text::content_alignment alginment;
-	em minimum_space;
-	bool multiline;
-};
-
 class static_text : public ui_node {
 public:
 	std::unique_ptr<static_text_provider> text_data;
@@ -445,14 +390,6 @@ public:
 	void set_enabled(bool e) override {
 		enabled = e;
 	}
-};
-
-struct image_information {
-	layout_rect margins;
-	em fixed_vertical_size;
-	em fixed_horizontal_size;
-	text::content_alignment h_alginment;
-	text::content_alignment v_alginment;
 };
 
 class icon_button : public ui_node, icontrol {
@@ -582,17 +519,6 @@ public:
 			return text_data.get();
 		return nullptr;
 	}
-};
-
-struct variable_definition {
-	uint16_t variable;
-	uint16_t data_type;
-	uint16_t offset;
-	uint8_t raw_data[8];
-};
-struct variable_definition_range {
-	variable_definition const* start;
-	variable_definition const* end;
 };
 
 class ui_node_disposal {
@@ -731,10 +657,6 @@ public:
 	// data storage
 	//
 
-	struct array_reference {
-		uint32_t file_offset;
-		uint32_t count;
-	};
 
 	char const* file_base = nullptr;
 	std::unique_ptr<file> defintions_file;
