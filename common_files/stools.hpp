@@ -39,16 +39,14 @@ public:
 	template<typename T>
 	void write(T const& d) {
 		auto start_size = data_.size();
-		auto extra = alignof(T) - (start_size % alignof(T));
-		data_.resize(start_size + sizeof(T) + extra, 0);
-		std::memcpy(data_.data() + extra + start_size, &d, sizeof(T));
+		data_.resize(start_size + sizeof(T), 0);
+		std::memcpy(data_.data() + start_size, &d, sizeof(T));
 	}
 	template<typename T>
 	void write_fixed(T const* d, size_t count) {
 		auto start_size = data_.size();
-		auto extra = alignof(T) - (start_size % alignof(T));
-		data_.resize(start_size + extra + sizeof(T) * count, 0);
-		std::memcpy(data_.data() + extra + start_size, d, sizeof(T) * count);
+		data_.resize(start_size + sizeof(T) * count, 0);
+		std::memcpy(data_.data() + start_size, d, sizeof(T) * count);
 	}
 	template<typename T>
 	void write_variable(T const* d, size_t count) {
@@ -100,8 +98,6 @@ public:
 	template<typename T>
 	T read() {
 		T temp = T{ };
-		auto extra = alignof(T) - (((data + read_position) - base_offset) % alignof(T));
-		read_position += extra;
 		if(read_position + sizeof(T) <= size) {
 			std::memcpy(&temp, data + read_position, sizeof(T));
 			read_position += sizeof(T);
@@ -110,11 +106,8 @@ public:
 	}
 	template<typename T>
 	std::span<T const> read_fixed(size_t count) const {
-		auto extra = alignof(T) - (((data + read_position) - base_offset) % alignof(T));
-		read_position += extra;
-
 		auto len = std::min(count, (size - read_position) / sizeof(T));
-		auto start = (T const*)(data + read_position + extra);
+		auto start = (T const*)(data + read_position);
 		return std::span<T const>(start, start + len);
 	}
 	template<typename T>

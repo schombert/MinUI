@@ -81,4 +81,7 @@ struct ui_definitions {
 	ankerl::unordered_dense::map<uint32_t, std::string> d_user_mouse_fn_a_raw;
 
 	void save_to_file(std::wstring_view file_name);
+
+	void save_to_project_file(std::wstring_view file_name);
+	void load_from_project_file(std::wstring_view file_name);
 };
