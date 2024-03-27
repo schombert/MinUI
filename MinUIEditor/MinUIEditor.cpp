@@ -188,7 +188,102 @@ void ui_definitions::save_to_file(std::wstring_view file_name) {
 void ui_definitions::save_to_project_file(std::wstring_view file_name) {
 	serialization::out_buffer buf;
 
+	buf.write(uint32_t(sounds.size()));
+	for(auto& s : sounds) {
+		buf.write(s.file_name);
+	}
 
+	buf.write(uint32_t(brushes.size()));
+	for(auto& b : brushes) {
+		buf.write(b.main_is_image);
+		buf.write(b.m_color);
+		buf.write(b.m_file);
+		buf.write(b.disabled_is_image);
+		buf.write(b.d_color);
+		buf.write(b.d_file);
+		buf.write(b.line_shading);
+		buf.write(b.highlight_shading);
+		buf.write(b.line_highlight_shading);
+	}
+
+	buf.write(uint32_t(icons.size()));
+	for(auto& i : icons) {
+		buf.write(i.xsize);
+		buf.write(i.ysize);
+		buf.write(uint32_t(i.sub_slots.size()));
+		for(auto& s : i.sub_slots) {
+			buf.write(s.is_svg);
+			buf.write(s.file);
+		}
+	}
+
+	buf.write(uint32_t(images.size()));
+	for(auto& i : images) {
+		buf.write(i.xsize);
+		buf.write(i.ysize);
+		buf.write(uint32_t(i.sub_slots.size()));
+		for(auto& s : i.sub_slots) {
+			buf.write(s.file);
+		}
+	}
+
+	uint32_t num_elements = uint32_t(d_icon_position.size());
+	buf.write(num_elements);
+	buf.write_fixed(d_icon_position.data(), num_elements);
+	buf.write_fixed(d_default_position.data(), num_elements);
+	buf.write_fixed(d_interactable_definition.data(), num_elements);
+	buf.write_fixed(d_icon.data(), num_elements);
+	buf.write_fixed(d_class.data(), num_elements);
+	buf.write_fixed(d_standard_flags.data(), num_elements);
+	buf.write_fixed(d_foreground_brush.data(), num_elements);
+	buf.write_fixed(d_background_brush.data(), num_elements);
+	buf.write_fixed(d_highlight_brush.data(), num_elements);
+	buf.write_fixed(d_info_brush.data(), num_elements);
+
+	auto write_v_umap = [&buf](auto& u) { 
+		buf.write(uint32_t(u.size()));
+		for(auto& p : u) {
+			buf.write(uint32_t(p.first));
+			buf.write_variable(p.second.data(), p.second.size());
+		}
+	};
+
+	write_v_umap(d_fixed_children);
+	write_v_umap(d_window_children);
+
+	for(uint32_t i = 0; i < num_elements; ++i) {
+		buf.write_variable(d_variable_definition[i].data(), d_variable_definition[i].size());
+	}
+
+	buf.write_fixed(d_total_variable_size.data(), num_elements);
+	buf.write_fixed(d_background_definition.data(), num_elements);
+
+	auto write_umap = [&buf](auto& u) {
+		buf.write(uint32_t(u.size()));
+		for(auto& p : u) {
+			buf.write(uint32_t(p.first));
+			buf.write(p.second);
+		}
+	};
+
+	write_umap(d_divider_index);
+	write_umap(d_horizontal_orientation);
+	write_umap(d_column_properties);
+	write_umap(d_page_ui_definitions);
+	write_umap(d_text_information);
+	write_umap(d_interaction_sound);
+	write_umap(d_image_information);
+
+	write_umap(d_on_update_raw);
+	write_umap(d_on_gain_focus_raw);
+	write_umap(d_on_lose_focus_raw);
+	write_umap(d_on_visible_raw);
+	write_umap(d_on_hide_raw);
+	write_umap(d_on_create_raw);
+	write_umap(d_user_fn_a_raw);
+	write_umap(d_user_fn_b_raw);
+	write_umap(d_user_mouse_fn_a_raw);
+	
 	buf.finalize();
 
 	std::wstring final_file_name = std::wstring{ file_name } + L".mui";
