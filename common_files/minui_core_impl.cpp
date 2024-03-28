@@ -684,6 +684,7 @@ public:
 	ankerl::unordered_dense::map_view<uint32_t, const text_information> d_text_information;
 	ankerl::unordered_dense::map_view<uint32_t, const sound_handle> d_interaction_sound;
 	ankerl::unordered_dense::map_view<uint32_t, const image_information> d_image_information;
+	ankerl::unordered_dense::map_view<uint32_t, const child_data_type> d_child_data_type;
 
 	ankerl::unordered_dense::map_view<uint32_t, const array_reference> d_on_update_raw;
 	ankerl::unordered_dense::map_view<uint32_t, const array_reference> d_on_gain_focus_raw;
@@ -704,6 +705,8 @@ public:
 	std::vector<user_function> d_user_fn_a;
 	std::vector<user_function> d_user_fn_b;
 	std::vector<user_function> d_user_mouse_fn_a;
+
+	
 
 	//
 	// element definitions
@@ -773,53 +776,60 @@ public:
 		return d_background_definition[type_id];
 	}
 	int32_t get_divider_index(uint32_t type_id) const {
-		auto r = d_divider_index(type_id);
+		auto r = d_divider_index.atomic_find(type_id);
 		if(r)
 			return *r;
 		else 
 			return 0;
 	}
 	bool get_horizontal_orientation(uint32_t type_id) const {
-		auto r = d_horizontal_orientation(type_id);
+		auto r = d_horizontal_orientation.atomic_find(type_id);
 		if(r)
 			return *r;
 		else
 			return false;
 	}
 	column_properties get_column_properties(uint32_t type_id) const {
-		auto r = d_column_properties(type_id);
+		auto r = d_column_properties.atomic_find(type_id);
 		if(r)
 			return *r;
 		else
 			return column_properties{ };
 	}
 	page_ui_definitions get_page_ui_definitions(uint32_t type_id) const {
-		auto r = d_page_ui_definitions(type_id);
+		auto r = d_page_ui_definitions.atomic_find(type_id);
 		if(r)
 			return *r;
 		else
 			return page_ui_definitions{ };
 	}
 	text_information get_text_information(uint32_t type_id) const {
-		auto r = d_text_information(type_id);
+		auto r = d_text_information.atomic_find(type_id);
 		if(r)
 			return *r;
 		else
 			return text_information{ };
 	}
 	sound_handle get_interaction_sound(uint32_t type_id) const {
-		auto r = d_interaction_sound(type_id);
+		auto r = d_interaction_sound.atomic_find(type_id);
 		if(r)
 			return *r;
 		else
 			return sound_handle{ };
 	}
 	image_information get_image_information(uint32_t type_id) {
-		auto r = d_image_information(type_id);
+		auto r = d_image_information.atomic_find(type_id);
 		if(r)
 			return *r;
 		else
 			return image_information{ };
+	}
+	child_data_type get_child_data_type(uint32_t type_id) {
+		auto r = d_child_data_type.atomic_find(type_id);
+		if(r)
+			return *r;
+		else
+			return child_data_type{ uint16_t(0), uint16_t(0), uint16_t(0) };
 	}
 
 	user_function get_on_update(uint32_t type_id) {
@@ -960,11 +970,11 @@ public:
 };
 
 namespace impl {
-char* get_local_data(root& r, ui_node* n, uint32_t data_type) {
+char* get_local_data(root& r, ui_node* n, uint32_t variable) {
 	int32_t offset = -1;
 	auto vrang = r.get_variable_definition(n->type_id);
 	for(auto i = vrang.start; i != vrang.end; ++i) {
-		if(i->data_type == data_type) {
+		if(i->variable == variable) {
 			offset = (i->offset & 0x7FFF);
 			break;
 		}
@@ -975,15 +985,15 @@ char* get_local_data(root& r, ui_node* n, uint32_t data_type) {
 
 	char* addr = reinterpret_cast<char*>(n);
 	auto data = addr + n->size();
-	auto variable = data + 8 * offset;
+	auto v = data + 8 * offset;
 
-	return variable;
+	return v;
 }
-char const* get_local_data(root& r, ui_node const* n, uint32_t data_type) {
+char const* get_local_data(root& r, ui_node const* n, uint32_t variable) {
 	int32_t offset = -1;
 	auto vrang = r.get_variable_definition(n->type_id);
 	for(auto i = vrang.start; i != vrang.end; ++i) {
-		if(i->data_type == data_type) {
+		if(i->variable == variable) {
 			offset = (i->offset & 0x7FFF);
 			break;
 		}
@@ -994,9 +1004,9 @@ char const* get_local_data(root& r, ui_node const* n, uint32_t data_type) {
 
 	char const* addr = reinterpret_cast<char const*>(n);
 	auto data = addr + n->size();
-	auto variable = data + 8 * offset;
+	auto v = data + 8 * offset;
 
-	return variable;
+	return v;
 }
 }
 
@@ -1749,6 +1759,8 @@ void container_node::render(root& r, layout_position offset, std::vector<postpon
 	if((ui_node::behavior_flags & (behavior::functionally_hidden | behavior::visually_hidden)) != 0)
 		return;
 
+	render_background(r, r.get_background_definition(type_id), offset, *this);
+
 	if((ui_node::behavior_flags & behavior::standard_background) != 0) {
 		r.system.rectangle(
 			screen_space_rect{ r.system.to_screen_space(offset.x), r.system.to_screen_space(offset.y), r.system.to_screen_space(position.width), r.system.to_screen_space(position.height) },
@@ -1815,22 +1827,22 @@ probe_result container_node::mouse_probe(root& r, layout_position probe_pos, lay
 	return result;
 }
 void container_node::on_gain_focus(root& r) {
-	if(auto fn = r.get_on_gain_focus(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_gain_focus(ui_node::type_id);
+	fn(r, *this);
 }
 void container_node::on_lose_focus(root& r) {
-	if(auto fn = r.get_on_lose_focus(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_lose_focus(ui_node::type_id);
+	fn(r, *this);
 }
 void container_node::on_visible(root& r) {
-	if(auto fn = r.get_on_visible(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_visible(ui_node::type_id);
+	fn(r, *this);
 	for(auto c : children)
 		c->on_visible(r);
 }
 void container_node::on_hide(root& r) {
-	if(auto fn = r.get_on_hide(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_hide(ui_node::type_id);
+	fn(r, *this);
 	for(auto c : children)
 		c->on_hide(r);
 }
@@ -1838,8 +1850,8 @@ void container_node::on_update(root& r) {
 	if((ui_node::behavior_flags & behavior::functionally_hidden) != 0)
 		return;
 
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_update(ui_node::type_id);
+	fn(r, *this);
 
 	if((ui_node::behavior_flags & (behavior::functionally_hidden | behavior::visually_hidden)) != 0)
 		return;
@@ -1848,18 +1860,20 @@ void container_node::on_update(root& r) {
 		c->on_update(r);
 }
 void container_node::on_create(root& r) {
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
+	{
+		auto fn = r.get_on_update(ui_node::type_id);
 		fn(r, *this);
-
+	}
 	auto c = r.get_fixed_children(type_id);
 	while(c.start != c.end) {
 		auto n = r.make_control_by_type(this, *(c.start));
 		children.push_back(n);
 		++c.start;
 	}
-
-	if(auto fn = r.get_on_create(ui_node::type_id); fn)
+	{
+		auto fn = r.get_on_create(ui_node::type_id);
 		fn(r, *this);
+	}
 }
 
 void render_background(root& r, background_definition const& background, layout_position offset, ui_node const& node, rendering_modifiers rm = rendering_modifiers::none) {
@@ -1868,7 +1882,7 @@ void render_background(root& r, background_definition const& background, layout_
 			rm = rendering_modifiers::highlighted;
 	}
 	if(background.image.value != -1) {
-		r.system.background(background.image,
+		r.system.background(background.image, r.get_background_brush(node.type_id),
 			screen_space_rect{ r.system.to_screen_space(offset.x + background.exterior_edge_offsets.x), r.system.to_screen_space(offset.y + background.exterior_edge_offsets.y), r.system.to_screen_space(node.position.width + background.exterior_edge_offsets.width), r.system.to_screen_space(node.position.height + background.exterior_edge_offsets.height) },
 			background.texture_interior_region, rm);
 	} else if(background.brush != std::numeric_limits<uint16_t>::max()) {
@@ -1878,7 +1892,44 @@ void render_background(root& r, background_definition const& background, layout_
 	} else {
 		r.system.empty_rectangle(
 			screen_space_rect{ r.system.to_screen_space(offset.x), r.system.to_screen_space(offset.y), r.system.to_screen_space(node.position.width), r.system.to_screen_space(node.position.height) },
-			rm);
+			rm, r.get_background_brush(node.type_id));
+	}
+
+	if(background.left_border != 0) {
+		r.system.rectangle(
+			screen_space_rect{ 
+				r.system.to_screen_space(offset.x),
+				r.system.to_screen_space(offset.y), 
+				r.system.to_screen_space(em{ background.left_border }),
+				r.system.to_screen_space(node.position.height) },
+			rm, r.get_foreground_brush(node.type_id));
+	}
+	if(background.right_border != 0) {
+		r.system.rectangle(
+			screen_space_rect{
+				r.system.to_screen_space(offset.x + node.position.width - em{ background.right_border }),
+				r.system.to_screen_space(offset.y),
+				r.system.to_screen_space(em{ background.right_border }),
+				r.system.to_screen_space(node.position.height) },
+				rm, r.get_foreground_brush(node.type_id));
+	}
+	if(background.top_border != 0) {
+		r.system.rectangle(
+			screen_space_rect{
+				r.system.to_screen_space(offset.x),
+				r.system.to_screen_space(offset.y),
+				r.system.to_screen_space(node.position.width),
+				r.system.to_screen_space(em{ background.top_border }) },
+				rm, r.get_foreground_brush(node.type_id));
+	}
+	if(background.bottom_border != 0) {
+		r.system.rectangle(
+			screen_space_rect{
+				r.system.to_screen_space(offset.x),
+				r.system.to_screen_space(offset.y + node.position.height - em{ background.bottom_border }),
+				r.system.to_screen_space(node.position.width),
+				r.system.to_screen_space(em{ background.bottom_border }) },
+				rm, r.get_foreground_brush(node.type_id));
 	}
 }
 
@@ -1893,7 +1944,7 @@ void proportional_window::render(root& r, layout_position offset, std::vector<po
 	if((ui_node::behavior_flags & (behavior::functionally_hidden | behavior::visually_hidden)) != 0)
 		return;
 
-	render_background(r, background, offset, *this);
+	render_background(r, r.get_background_definition(type_id), offset, *this);
 
 	auto ico_pos = r.get_icon_position(ui_node::type_id);
 
@@ -1954,22 +2005,24 @@ probe_result proportional_window::mouse_probe(root& r, layout_position probe_pos
 	return result;
 }
 void proportional_window::on_gain_focus(root& r) {
-	if(auto fn = r.get_on_gain_focus(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_gain_focus(ui_node::type_id);
+	fn(r, *this);
 }
 void proportional_window::on_lose_focus(root& r) {
-	if(auto fn = r.get_on_lose_focus(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_lose_focus(ui_node::type_id);
+	fn(r, *this);
 }
 void proportional_window::on_visible(root& r) {
-	if(auto fn = r.get_on_visible(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_visible(ui_node::type_id);
+	fn(r, *this);
+
 	for(auto c : children)
 		c->on_visible(r);
 }
 void proportional_window::on_hide(root& r) {
-	if(auto fn = r.get_on_hide(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_hide(ui_node::type_id);
+	fn(r, *this);
+
 	for(auto c : children)
 		c->on_hide(r);
 }
@@ -1977,8 +2030,8 @@ void proportional_window::on_update(root& r) {
 	if((ui_node::behavior_flags & behavior::functionally_hidden) != 0)
 		return;
 
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_update(ui_node::type_id);
+	fn(r, *this);
 
 	if((ui_node::behavior_flags & (behavior::functionally_hidden | behavior::visually_hidden)) != 0)
 		return;
@@ -1987,13 +2040,13 @@ void proportional_window::on_update(root& r) {
 		c->on_update(r);
 }
 void proportional_window::on_create(root& r) {
-	background = r.get_background_definition(type_id);
-	auto cformatting =r.get_window_children(type_id);
+	auto cformatting = r.get_window_children(type_id);
 	child_positions.insert(child_positions.begin(), cformatting.start, cformatting.end);
 
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
+	{
+		auto fn = r.get_on_update(ui_node::type_id);
 		fn(r, *this);
-
+	}
 	auto c = r.get_fixed_children(type_id);
 	while(c.start != c.end) {
 		auto n = r.make_control_by_type(this, *(c.start));
@@ -2002,9 +2055,10 @@ void proportional_window::on_create(root& r) {
 	}
 
 	force_resize(r, layout_position{ position.width, position.height });
-
-	if(auto fn = r.get_on_create(ui_node::type_id); fn)
+	{
+		auto fn = r.get_on_create(ui_node::type_id);
 		fn(r, *this);
+	}
 }
 void proportional_window::force_resize(root& r, layout_position size) {
 	position.width = size.x;
@@ -2160,7 +2214,7 @@ void space_filler::render(root& r, layout_position offset, std::vector<postponed
 	if((ui_node::behavior_flags & (behavior::functionally_hidden | behavior::visually_hidden)) != 0)
 		return;
 
-	render_background(r, background, offset, *this);
+	render_background(r, r.get_background_definition(type_id), offset, *this);
 
 	for(auto c : children) {
 		auto child_position = get_sub_position(*this, *c) + offset;
@@ -2210,31 +2264,33 @@ probe_result space_filler::mouse_probe(root& r, layout_position probe_pos, layou
 	return result;
 }
 void space_filler::on_visible(root& r) {
-	if(auto fn = r.get_on_visible(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_visible(ui_node::type_id);
+	fn(r, *this);
+
 	for(auto c : children)
 		c->on_visible(r);
 }
 void space_filler::on_hide(root& r) {
-	if(auto fn = r.get_on_hide(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_hide(ui_node::type_id);
+	fn(r, *this);
+
 	for(auto c : children)
 		c->on_hide(r);
 }
 void space_filler::on_gain_focus(root& r) {
-	if(auto fn = r.get_on_gain_focus(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_gain_focus(ui_node::type_id);
+	fn(r, *this);
 }
 void space_filler::on_lose_focus(root& r) {
-	if(auto fn = r.get_on_lose_focus(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_lose_focus(ui_node::type_id);
+	fn(r, *this);
 }
 void space_filler::on_update(root& r) {
 	if((ui_node::behavior_flags & behavior::functionally_hidden) != 0)
 		return;
 
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_update(ui_node::type_id);
+	fn(r, *this);
 
 	if((ui_node::behavior_flags & (behavior::functionally_hidden | behavior::visually_hidden)) != 0)
 		return;
@@ -2243,10 +2299,10 @@ void space_filler::on_update(root& r) {
 		c->on_update(r);
 }
 void space_filler::on_create(root& r) {
-	background = r.get_background_definition(type_id);
-
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
+	{
+		auto fn = r.get_on_update(ui_node::type_id);
 		fn(r, *this);
+	}
 
 	auto c = r.get_fixed_children(type_id);
 	while(c.start != c.end) {
@@ -2257,8 +2313,10 @@ void space_filler::on_create(root& r) {
 
 	force_resize(r, layout_position{ position.width, position.height });
 
-	if(auto fn = r.get_on_create(ui_node::type_id); fn)
+	{
+		auto fn = r.get_on_create(ui_node::type_id);
 		fn(r, *this);
+	}
 }
 void space_filler::force_resize(root& r, layout_position size) {
 	position.width = size.x;
@@ -2946,7 +3004,7 @@ void dynamic_column::render(root& r, layout_position offset, std::vector<postpon
 
 	auto col_settings = r.get_column_properties(ui_node::type_id);
 
-	render_background(r, background, offset, *this);
+	render_background(r, r.get_background_definition(type_id), offset, *this);
 
 	em last_height{ -1 };
 	bool mode = false;
@@ -3062,8 +3120,8 @@ probe_result dynamic_column::mouse_probe(root& r, layout_position probe_pos, lay
 	return result;
 }
 void dynamic_column::on_visible(root& r) {
-	if(auto fn = r.get_on_visible(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_visible(ui_node::type_id);
+	fn(r, *this);
 
 	uint32_t page_start = (current_page == 0 ? 0 : page_starts[current_page - 1]);
 	uint32_t page_end = (current_page >= int32_t(num_pages) - 1 ? uint32_t(children.size()) : page_starts[current_page]);
@@ -3073,8 +3131,8 @@ void dynamic_column::on_visible(root& r) {
 	}
 }
 void dynamic_column::on_hide(root& r) {
-	if(auto fn = r.get_on_hide(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_hide(ui_node::type_id);
+	fn(r, *this);
 
 	uint32_t page_start = (current_page == 0 ? 0 : page_starts[current_page - 1]);
 	uint32_t page_end = (current_page >= int32_t(num_pages) - 1 ? uint32_t(children.size()) : page_starts[current_page]);
@@ -3084,19 +3142,19 @@ void dynamic_column::on_hide(root& r) {
 	}
 }
 void dynamic_column::on_gain_focus(root& r) {
-	if(auto fn = r.get_on_gain_focus(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_gain_focus(ui_node::type_id);
+	fn(r, *this);
 }
 void dynamic_column::on_lose_focus(root& r) {
-	if(auto fn = r.get_on_lose_focus(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_lose_focus(ui_node::type_id);
+	fn(r, *this);
 }
 void dynamic_column::on_update(root& r) {
 	if((ui_node::behavior_flags & behavior::functionally_hidden) != 0)
 		return;
 
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_update(ui_node::type_id);
+	fn(r, *this);
 	
 	if(pending_relayout)
 		repaginate(r);
@@ -3114,13 +3172,16 @@ void dynamic_column::on_update(root& r) {
 	page_controls->on_update(r);
 }
 void dynamic_column::on_create(root& r) {
-	background = r.get_background_definition(type_id);
 	page_controls = make_page_controls(r, this);
 
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
+	{
+		auto fn = r.get_on_update(ui_node::type_id);
 		fn(r, *this);
-	if(auto fn = r.get_on_create(ui_node::type_id); fn)
+	}
+	{
+		auto fn = r.get_on_create(ui_node::type_id);
 		fn(r, *this);
+	}
 
 	force_resize(r, layout_position{ position.width, position.height });
 
@@ -3358,7 +3419,7 @@ void monotype_column::render(root& r, layout_position offset, std::vector<postpo
 	if((ui_node::behavior_flags & (behavior::functionally_hidden | behavior::visually_hidden)) != 0)
 		return;
 
-	render_background(r, background, offset, *this);
+	render_background(r, r.get_background_definition(type_id), offset, *this);
 
 	em last_height{ -1 };
 	bool mode = false;
@@ -3471,8 +3532,8 @@ probe_result monotype_column::mouse_probe(root& r, layout_position probe_pos, la
 	return result;
 }
 void monotype_column::on_visible(root& r) {
-	if(auto fn = r.get_on_visible(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_visible(ui_node::type_id);
+	fn(r, *this);
 
 	uint32_t page_start = page_size * current_page;
 	uint32_t in_page = std::min(uint32_t(data->size() - page_start), uint32_t(page_size));
@@ -3482,8 +3543,8 @@ void monotype_column::on_visible(root& r) {
 	}
 }
 void monotype_column::on_hide(root& r) {
-	if(auto fn = r.get_on_hide(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_hide(ui_node::type_id);
+	fn(r, *this);
 
 	uint32_t page_start = page_size * current_page;
 	uint32_t in_page = std::min(uint32_t(data->size() - page_start), uint32_t(page_size));
@@ -3493,19 +3554,19 @@ void monotype_column::on_hide(root& r) {
 	}
 }
 void monotype_column::on_gain_focus(root& r) {
-	if(auto fn = r.get_on_gain_focus(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_gain_focus(ui_node::type_id);
+	fn(r, *this);
 }
 void monotype_column::on_lose_focus(root& r) {
-	if(auto fn = r.get_on_lose_focus(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_lose_focus(ui_node::type_id);
+	fn(r, *this);
 }
 void monotype_column::on_update(root& r) {
 	if((ui_node::behavior_flags & behavior::functionally_hidden) != 0)
 		return;
 
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_update(ui_node::type_id);
+	fn(r, *this);
 
 	if((ui_node::behavior_flags & (behavior::functionally_hidden | behavior::visually_hidden)) != 0)
 		return;
@@ -3518,11 +3579,11 @@ void monotype_column::on_update(root& r) {
 		uint32_t page_start = page_size * current_page;
 		uint32_t in_page = std::min(uint32_t(data->size() - page_start), uint32_t(page_size));
 
-		auto item_type = r.get_sub_item_definition(ui_node::type_id);
+		auto item_type = r.get_child_data_type(ui_node::type_id);
 
 		uint32_t i = 0;
 		for(; i < in_page && i < children.size(); ++i) {
-			auto dat = impl::get_local_data(r, children[i], item_type.data_type);
+			auto dat = impl::get_local_data(r, children[i], item_type.variable);
 			if(dat) {
 				memcpy(dat, (*data)[i + page_start], datatype_size(item_type.data_type));
 			}
@@ -3537,20 +3598,24 @@ void monotype_column::on_update(root& r) {
 	}
 }
 void monotype_column::on_create(root& r) {
-	background = r.get_background_definition(type_id);
+	data = make_vector_of(r.get_child_data_type(type_id).data_type);
 	page_controls = make_page_controls(r, this);
 
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
+	{
+		auto fn = r.get_on_update(ui_node::type_id);
 		fn(r, *this);
-	if(auto fn = r.get_on_create(ui_node::type_id); fn)
+	}
+	{
+		auto fn = r.get_on_create(ui_node::type_id);
 		fn(r, *this);
+	}
 
 	force_resize(r, layout_position{ position.width, position.height });
 
 	page_controls->on_update(r);
 }
 void monotype_column::force_resize(root& r, layout_position size) {
-	auto item_type = r.get_sub_item_definition(ui_node::type_id);
+	auto item_type = r.get_child_data_type(ui_node::type_id);
 
 	position.width = size.x;
 	position.height = size.y;
@@ -3571,7 +3636,7 @@ void monotype_column::force_resize(root& r, layout_position size) {
 	for(; true; ++i) {
 		bool child_fits_in_column = true;
 		if(i >= children.size()) {
-			children.push_back(r.make_control_by_type(this, item_type.type));
+			children.push_back(r.make_control_by_type(this, item_type.child_control_type));
 		}
 		if(width_per_column == em{ 0 }) {
 			auto item_min = children[0]->minimum_width(r);
@@ -3641,7 +3706,7 @@ void monotype_column::force_resize(root& r, layout_position size) {
 
 	uint32_t i = 0;
 	for(; i < in_page; ++i) {
-		auto dat = impl::get_local_data(r, children[i], item_type.data_type);
+		auto dat = impl::get_local_data(r, children[i], item_type.variable);
 		if(dat) {
 			memcpy(dat, (*data)[i + page_start], datatype_size(item_type.data_type));
 		}
@@ -3661,16 +3726,16 @@ void monotype_column::resize(root& r, layout_position maximum_space, em desired_
 }
 em monotype_column::minimum_width(root& r) {
 	if(children.empty()) {
-		auto item_type = r.get_sub_item_definition(ui_node::type_id);
-		children.push_back(r.make_control_by_type(this, item_type.type));
+		auto item_type = r.get_child_data_type(ui_node::type_id);
+		children.push_back(r.make_control_by_type(this, item_type.child_control_type));
 	}
 
 	return std::max(page_controls->minimum_width(r), children[0]->minimum_width(r));
 }
 em monotype_column::minimum_height(root& r) {
 	if(children.empty()) {
-		auto item_type = r.get_sub_item_definition(ui_node::type_id);
-		children.push_back(r.make_control_by_type(this, item_type.type));
+		auto item_type = r.get_child_data_type(ui_node::type_id);
+		children.push_back(r.make_control_by_type(this, item_type.child_control_type));
 	}
 
 	return page_controls->minimum_height(r) + children[0]->minimum_height(r);
@@ -3689,11 +3754,11 @@ void monotype_column::change_page(root& r, int32_t new_page) {
 
 	uint32_t page_start = page_size * current_page;
 	uint32_t in_page = std::min(uint32_t(data->size() - page_start), uint32_t(page_size));
-	auto item_type = r.get_sub_item_definition(ui_node::type_id);
+	auto item_type = r.get_child_data_type(ui_node::type_id);
 
 	uint32_t i = 0;
 	for(; i < in_page && i < children.size(); ++i) {
-		auto dat = impl::get_local_data(r, children[i], item_type.data_type);
+		auto dat = impl::get_local_data(r, children[i], item_type.variable);
 		if(dat) {
 			memcpy(dat, (*data)[i + page_start], datatype_size(item_type.data_type));
 		}
@@ -3774,29 +3839,29 @@ probe_result panes_set::mouse_probe(root& r, layout_position probe_pos, layout_p
 	return result;
 }
 void panes_set::on_gain_focus(root& r) {
-	if(auto fn = r.get_on_gain_focus(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_gain_focus(ui_node::type_id);
+	fn(r, *this);
 }
 void panes_set::on_lose_focus(root& r) {
-	if(auto fn = r.get_on_lose_focus(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_lose_focus(ui_node::type_id);
+	fn(r, *this);
 }
 void panes_set::on_visible(root& r) {
-	if(auto fn = r.get_on_visible(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_visible(ui_node::type_id);
+	fn(r, *this);
 	children[selected]->on_visible(r);
 }
 void panes_set::on_hide(root& r) {
-	if(auto fn = r.get_on_hide(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_hide(ui_node::type_id);
+	fn(r, *this);
 	children[selected]->on_hide(r);
 }
 void panes_set::on_update(root& r) {
 	if((ui_node::behavior_flags & behavior::functionally_hidden) != 0)
 		return;
 
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_update(ui_node::type_id);
+	fn(r, *this);
 
 	if((ui_node::behavior_flags & (behavior::functionally_hidden | behavior::visually_hidden)) != 0)
 		return;
@@ -3804,8 +3869,10 @@ void panes_set::on_update(root& r) {
 	children[selected]->on_update(r);
 }
 void panes_set::on_create(root& r) {
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
+	{
+		auto fn = r.get_on_update(ui_node::type_id);
 		fn(r, *this);
+	}
 
 	auto c = r.get_fixed_children(type_id);
 	while(c.start != c.end) {
@@ -3816,8 +3883,10 @@ void panes_set::on_create(root& r) {
 
 	force_resize(r, layout_position{ position.width, position.height });
 
-	if(auto fn = r.get_on_create(ui_node::type_id); fn)
+	{
+		auto fn = r.get_on_create(ui_node::type_id);
 		fn(r, *this);
+	}
 }
 page_information panes_set::get_page_information() {
 	return page_information{ selected, uint16_t(children.size()) };
@@ -3962,12 +4031,12 @@ void layers::on_hide(root& r) {
 		c->on_hide(r);
 }
 void layers::on_gain_focus(root& r) {
-	if(auto fn = r.get_on_gain_focus(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_gain_focus(ui_node::type_id);
+	fn(r, *this);
 }
 void layers::on_lose_focus(root& r) {
-	if(auto fn = r.get_on_lose_focus(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_lose_focus(ui_node::type_id);
+	fn(r, *this);
 }
 void layers::on_create(root& r) {
 	auto c = r.get_fixed_children(type_id);
@@ -4032,7 +4101,7 @@ void dynamic_grid::render(root& r, layout_position offset, std::vector<postponed
 	if(pending_relayout)
 		repaginate(r);
 
-	render_background(r, background, offset, *this);
+	render_background(r, r.get_background_definition(type_id), offset, *this);
 
 	em last_height{ -1 };
 	bool mode = false;
@@ -4142,8 +4211,8 @@ probe_result dynamic_grid::mouse_probe(root& r, layout_position probe_pos, layou
 	return result;
 }
 void dynamic_grid::on_visible(root& r) {
-	if(auto fn = r.get_on_visible(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_visible(ui_node::type_id);
+	fn(r, *this);
 
 	uint32_t page_start = (current_page == 0 ? 0 : page_starts[current_page - 1]);
 	uint32_t page_end = (current_page >= int32_t(num_pages) - 1 ? uint32_t(children.size()) : page_starts[current_page]);
@@ -4153,8 +4222,8 @@ void dynamic_grid::on_visible(root& r) {
 	}
 }
 void dynamic_grid::on_hide(root& r) {
-	if(auto fn = r.get_on_hide(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_hide(ui_node::type_id);
+	fn(r, *this);
 
 	uint32_t page_start = (current_page == 0 ? 0 : page_starts[current_page - 1]);
 	uint32_t page_end = (current_page >= int32_t(num_pages) - 1 ? uint32_t(children.size()) : page_starts[current_page]);
@@ -4164,19 +4233,19 @@ void dynamic_grid::on_hide(root& r) {
 	}
 }
 void dynamic_grid::on_gain_focus(root& r) {
-	if(auto fn = r.get_on_gain_focus(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_gain_focus(ui_node::type_id);
+	fn(r, *this);
 }
 void dynamic_grid::on_lose_focus(root& r) {
-	if(auto fn = r.get_on_lose_focus(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_lose_focus(ui_node::type_id);
+	fn(r, *this);
 }
 void dynamic_grid::on_update(root& r) {
 	if((ui_node::behavior_flags & behavior::functionally_hidden) != 0)
 		return;
 
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_update(ui_node::type_id);
+	fn(r, *this);
 
 	if(pending_relayout)
 		repaginate(r);
@@ -4194,13 +4263,16 @@ void dynamic_grid::on_update(root& r) {
 	page_controls->on_update(r);
 }
 void dynamic_grid::on_create(root& r) {
-	background = r.get_background_definition(type_id);
 	page_controls = make_page_controls(r, this);
 
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
+	{
+		auto fn = r.get_on_update(ui_node::type_id);
 		fn(r, *this);
-	if(auto fn = r.get_on_create(ui_node::type_id); fn)
+	}
+	{
+		auto fn = r.get_on_create(ui_node::type_id);
 		fn(r, *this);
+	}
 
 	force_resize(r, layout_position{ position.width, position.height });
 
@@ -4390,9 +4462,7 @@ void static_text::render(root& r, layout_position offset, std::vector<postponed_
 	if((ui_node::behavior_flags & (behavior::functionally_hidden | behavior::visually_hidden)) != 0)
 		return;
 
-	r.system.empty_rectangle(
-		screen_space_rect{ r.system.to_screen_space(offset.x), r.system.to_screen_space(offset.y), r.system.to_screen_space(position.width), r.system.to_screen_space(position.height) },
-		((ui_node::behavior_flags & behavior::visually_interactable) != 0 && r.under_mouse.type_array[size_t(mouse_interactivity::position)].node == this) ? rendering_modifiers::highlighted : rendering_modifiers::none);
+	render_background(r, r.get_background_definition(type_id), offset, *this);
 
 	layout_rect rct{ offset.x + margins.x, offset.y + margins.y, position.width - (margins.x + margins.width), position.height - (margins.y + margins.height) };
 	text_data->render(r.system, rct, r.get_foreground_brush(ui_node::type_id));
@@ -4401,19 +4471,19 @@ probe_result static_text::mouse_probe(root& r, layout_position probe_pos, layout
 	return probe_result{ };
 }
 void static_text::on_visible(root& r) {
-	if(auto fn = r.get_on_visible(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_visible(ui_node::type_id);
+	fn(r, *this);
 }
 void static_text::on_hide(root& r) {
-	if(auto fn = r.get_on_hide(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_hide(ui_node::type_id);
+	fn(r, *this);
 }
 void static_text::on_update(root& r) {
 	if((ui_node::behavior_flags & behavior::functionally_hidden) != 0)
 		return;
 
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_update(ui_node::type_id);
+	fn(r, *this);
 }
 void static_text::on_create(root& r) {
 	text_data = r.system.make_text(*this);
@@ -4421,10 +4491,14 @@ void static_text::on_create(root& r) {
 	margins = data.margins;
 	text_data->set_font(r.system, data.font);
 
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
+	{
+		auto fn = r.get_on_update(ui_node::type_id);
 		fn(r, *this);
-	if(auto fn = r.get_on_create(ui_node::type_id); fn)
+	}
+	{
+		auto fn = r.get_on_create(ui_node::type_id);
 		fn(r, *this);
+	}
 
 	force_resize(r, layout_position{ position.width, position.height });
 }
@@ -4432,10 +4506,14 @@ void static_text::on_reload(root& r) {
 	auto data = r.get_text_information(ui_node::type_id);
 	text_data->set_font(r.system, data.font);
 
-	if(auto fn = r.get_on_create(ui_node::type_id); fn)
+	{
+		auto fn = r.get_on_create(ui_node::type_id);
 		fn(r, *this);
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
+	}
+	{
+		auto fn = r.get_on_update(ui_node::type_id);
 		fn(r, *this);
+	}
 }
 void static_text::force_resize(root& r, layout_position size) {
 	position.width = size.x;
@@ -4483,7 +4561,7 @@ void text_button::render(root& r, layout_position offset, std::vector<postponed_
 	if((ui_node::behavior_flags & (behavior::functionally_hidden | behavior::visually_hidden)) != 0)
 		return;
 
-	render_background(r, background, offset, *this, enabled ? rendering_modifiers::none : rendering_modifiers::disabled);
+	render_background(r, r.get_background_definition(type_id), offset, *this, enabled ? rendering_modifiers::none : rendering_modifiers::disabled);
 
 	auto ico_pos = r.get_icon_position(ui_node::type_id);
 	
@@ -4520,31 +4598,34 @@ probe_result text_button::mouse_probe(root& r, layout_position probe_pos, layout
 	return result;
 }
 void text_button::on_visible(root& r) {
-	if(auto fn = r.get_on_visible(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_visible(ui_node::type_id);
+	fn(r, *this);
 }
 void text_button::on_hide(root& r) {
-	if(auto fn = r.get_on_hide(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_hide(ui_node::type_id);
+	fn(r, *this);
 }
 void text_button::on_update(root& r) {
 	if((ui_node::behavior_flags & behavior::functionally_hidden) != 0)
 		return;
 
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_update(ui_node::type_id);
+	fn(r, *this);
 }
 void text_button::on_create(root& r) {
 	text_data = r.system.make_text(*this);
-	background = r.get_background_definition(type_id);
 	auto data = r.get_text_information(ui_node::type_id);
 	text_data->set_font(r.system, data.font);
 	margins = data.margins;
 
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
+	{
+		auto fn = r.get_on_update(ui_node::type_id);
 		fn(r, *this);
-	if(auto fn = r.get_on_create(ui_node::type_id); fn)
+	}
+	{
+		auto fn = r.get_on_create(ui_node::type_id);
 		fn(r, *this);
+	}
 
 	force_resize(r, layout_position{ position.width, position.height });
 }
@@ -4552,10 +4633,14 @@ void text_button::on_reload(root& r) {
 	auto data = r.get_text_information(ui_node::type_id);
 	text_data->set_font(r.system, data.font);
 
-	if(auto fn = r.get_on_create(ui_node::type_id); fn)
+	{
+		auto fn = r.get_on_create(ui_node::type_id);
 		fn(r, *this);
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
+	}
+	{
+		auto fn = r.get_on_update(ui_node::type_id);
 		fn(r, *this);
+	}
 }
 void text_button::force_resize(root& r, layout_position size) {
 	position.width = size.x;
@@ -4593,7 +4678,8 @@ em text_button::minimum_height(root& r) {
 	return lh * std::max(1, text_data->get_number_of_text_lines(r.system));
 }
 void text_button::on_lbutton(root& r, layout_position pos) {
-	if(auto fn = r.get_user_mouse_fn_a(ui_node::type_id); fn && enabled) {
+	if(enabled) {
+		auto fn = r.get_user_mouse_fn_a(ui_node::type_id);
 		r.system.play_sound(r.get_interaction_sound(type_id));
 		fn(r, *this);
 	}
@@ -4644,7 +4730,7 @@ void icon_button::render(root& r, layout_position offset, std::vector<postponed_
 	if((ui_node::behavior_flags & (behavior::functionally_hidden | behavior::visually_hidden)) != 0)
 		return;
 
-	render_background(r, background, offset, *this, enabled ? rendering_modifiers::none : rendering_modifiers::disabled);
+	render_background(r, r.get_background_definition(type_id), offset, *this, enabled ? rendering_modifiers::none : rendering_modifiers::disabled);
 
 	auto ico_pos = r.get_icon_position(ui_node::type_id);
 
@@ -4673,27 +4759,29 @@ probe_result icon_button::mouse_probe(root& r, layout_position probe_pos, layout
 	return result;
 }
 void icon_button::on_visible(root& r) {
-	if(auto fn = r.get_on_visible(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_visible(ui_node::type_id);
+	fn(r, *this);
 }
 void icon_button::on_hide(root& r) {
-	if(auto fn = r.get_on_hide(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_hide(ui_node::type_id);
+	fn(r, *this);
 }
 void icon_button::on_update(root& r) {
 	if((ui_node::behavior_flags & behavior::functionally_hidden) != 0)
 		return;
 
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_update(ui_node::type_id);
+	fn(r, *this);
 }
 void icon_button::on_create(root& r) {
-	background = r.get_background_definition(type_id);
-
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
+	{
+		auto fn = r.get_on_update(ui_node::type_id);
 		fn(r, *this);
-	if(auto fn = r.get_on_create(ui_node::type_id); fn)
+	}
+	{
+		auto fn = r.get_on_create(ui_node::type_id);
 		fn(r, *this);
+	}
 
 	force_resize(r, layout_position{ position.width, position.height });
 }
@@ -4726,8 +4814,9 @@ em icon_button::minimum_height(root& r) {
 	}
 }
 void icon_button::on_lbutton(root& r, layout_position pos) {
-	if(auto fn = r.get_user_mouse_fn_a(ui_node::type_id); fn && enabled) {
+	if(enabled) {
 		r.system.play_sound(r.get_interaction_sound(type_id));
+		auto fn = r.get_user_mouse_fn_a(ui_node::type_id);
 		fn(r, *this);
 	}
 }
@@ -4743,14 +4832,10 @@ void edit_control::render(root& r, layout_position offset, std::vector<postponed
 	if((ui_node::behavior_flags & (behavior::functionally_hidden | behavior::visually_hidden)) != 0)
 		return;
 
-	r.system.empty_rectangle(
-		screen_space_rect{ r.system.to_screen_space(offset.x), r.system.to_screen_space(offset.y), r.system.to_screen_space(position.width), r.system.to_screen_space(position.height) },
-		((ui_node::behavior_flags & behavior::visually_interactable) != 0 && r.under_mouse.type_array[size_t(mouse_interactivity::position)].node == this) ? rendering_modifiers::highlighted : rendering_modifiers::none,
-		r.get_background_brush(type_id));
+	render_background(r, r.get_background_definition(type_id), offset, *this);
 
 	auto ico_pos = r.get_icon_position(ui_node::type_id);
 
-	
 	if(r.contains_focus(this)) {
 		r.system.icon(
 			r.get_icon(ui_node::type_id),
@@ -4793,35 +4878,35 @@ probe_result edit_control::mouse_probe(root& r, layout_position probe_pos, layou
 	return result;
 }
 void edit_control::on_visible(root& r) {
-	if(auto fn = r.get_on_visible(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_visible(ui_node::type_id);
+	fn(r, *this);
 }
 void edit_control::on_hide(root& r) {
-	if(auto fn = r.get_on_hide(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_hide(ui_node::type_id);
+	fn(r, *this);
 }
 void edit_control::on_gain_focus(root& r) {
 	r.edit_target = text_data.get();
 	text_data->on_focus(r.system);
-	if(auto fn = r.get_on_gain_focus(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_gain_focus(ui_node::type_id);
+	fn(r, *this);
 }
 void edit_control::on_lose_focus(root& r) {
 	r.edit_target = nullptr;
 	text_data->on_lose_focus(r.system);
-	if(auto fn = r.get_on_lose_focus(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_lose_focus(ui_node::type_id);
+	fn(r, *this);
 }
 void edit_control::on_text_update(root& r) {
-	if(auto fn = r.get_user_fn_a(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_user_fn_a(ui_node::type_id);
+	fn(r, *this);
 }
 void edit_control::on_update(root& r) {
 	if((ui_node::behavior_flags & behavior::functionally_hidden) != 0)
 		return;
 
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
-		fn(r, *this);
+	auto fn = r.get_on_update(ui_node::type_id);
+	fn(r, *this);
 }
 void edit_control::on_create(root& r) {
 	text_data = r.system.make_editable_text(*this);
@@ -4829,10 +4914,14 @@ void edit_control::on_create(root& r) {
 	margins = data.margins;
 	text_data->set_font(r.system, data.font);
 
-	if(auto fn = r.get_on_update(ui_node::type_id); fn)
+	{
+		auto fn = r.get_on_update(ui_node::type_id);
 		fn(r, *this);
-	if(auto fn = r.get_on_create(ui_node::type_id); fn)
+	}
+	{
+		auto fn = r.get_on_create(ui_node::type_id);
 		fn(r, *this);
+	}
 
 	force_resize(r, layout_position{ position.width, position.height });
 }
@@ -5530,6 +5619,8 @@ void root::load_definitions(char const* data, size_t size) {
 	auto d_interaction_sound_content = buf.read<uint32_t>();
 	auto d_image_information_buckets = buf.read<uint32_t>();
 	auto d_image_information_content = buf.read<uint32_t>();
+	auto d_child_dt_buckets = buf.read<uint32_t>();
+	auto d_child_dt_content = buf.read<uint32_t>();
 	auto d_on_update_raw_buckets = buf.read<uint32_t>();
 	auto d_on_update_raw_content = buf.read<uint32_t>();
 	auto d_on_gain_focus_raw_buckets = buf.read<uint32_t>();
@@ -5609,6 +5700,11 @@ void root::load_definitions(char const* data, size_t size) {
 		auto cspan = buf.read_fixed<decltype(d_image_information)::value_container_type>(d_image_information_content);
 		auto bspan = buf.read_fixed<decltype(d_image_information)::bucket_type>(d_image_information_buckets);
 		d_image_information = decltype(d_image_information)(cspan, bspan);
+	}
+	{
+		auto cspan = buf.read_fixed<decltype(d_child_data_type)::value_container_type>(d_child_dt_content);
+		auto bspan = buf.read_fixed<decltype(d_child_data_type)::bucket_type>(d_child_dt_buckets);
+		d_child_data_type = decltype(d_child_data_type)(cspan, bspan);
 	}
 	{
 		auto cspan = buf.read_fixed<decltype(d_on_update_raw)::value_container_type>(d_on_update_raw_content);

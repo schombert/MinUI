@@ -881,7 +881,10 @@ struct background_definition {
 	layout_rect exterior_edge_offsets;
 	layout_rect texture_interior_region;
 	uint16_t brush; // if -1, transparent
-	// TODO: BORDERS
+	uint8_t left_border = 0;
+	uint8_t right_border = 0;
+	uint8_t top_border = 0;
+	uint8_t bottom_border = 0;
 };
 enum class column_layout : uint8_t {
 	top, centered, bottom
@@ -918,7 +921,11 @@ struct image_information {
 	text::content_alignment h_alginment;
 	text::content_alignment v_alginment;
 };
-
+struct child_data_type {
+	uint16_t variable;
+	uint16_t data_type;
+	uint16_t child_control_type;
+};
 struct array_reference {
 	uint32_t file_offset;
 	uint32_t count;

@@ -75,6 +75,8 @@ void ui_definitions::save_to_file(std::wstring_view file_name) {
 	buf.write(uint32_t(d_interaction_sound.size()));
 	buf.write(uint32_t(d_image_information.bucket_count()));
 	buf.write(uint32_t(d_image_information.size()));
+	buf.write(uint32_t(d_child_data_type.bucket_count()));
+	buf.write(uint32_t(d_child_data_type.size()));
 	buf.write(uint32_t(d_on_update_raw.bucket_count()));
 	buf.write(uint32_t(d_on_update_raw.size()));
 	buf.write(uint32_t(d_on_gain_focus_raw.bucket_count()));
@@ -162,6 +164,8 @@ void ui_definitions::save_to_file(std::wstring_view file_name) {
 	buf.write_fixed(d_interaction_sound.m_buckets, d_interaction_sound.bucket_count());
 	buf.write_fixed(d_image_information.m_values.data(), d_image_information.size());
 	buf.write_fixed(d_image_information.m_buckets, d_image_information.bucket_count());
+	buf.write_fixed(d_child_data_type.m_values.data(), d_child_data_type.size());
+	buf.write_fixed(d_child_data_type.m_buckets, d_child_data_type.bucket_count());
 
 	write_umap_of_vector(d_on_update_raw);
 	write_umap_of_vector(d_on_gain_focus_raw);
@@ -273,6 +277,7 @@ void ui_definitions::save_to_project_file(std::wstring_view file_name) {
 	write_umap(d_text_information);
 	write_umap(d_interaction_sound);
 	write_umap(d_image_information);
+	write_umap(d_child_data_type);
 
 	write_umap(d_on_update_raw);
 	write_umap(d_on_gain_focus_raw);
@@ -439,6 +444,12 @@ void ui_definitions::load_from_project_file(std::wstring_view file_name) {
 	for(uint32_t i = 0; i < numfc; ++i) {
 		auto key = buf.read<uint32_t>();
 		d_image_information.insert_or_assign(key, buf.read<minui::image_information>());
+	}
+	numfc = buf.read<uint32_t>();
+	d_child_data_type.clear();
+	for(uint32_t i = 0; i < numfc; ++i) {
+		auto key = buf.read<uint32_t>();
+		d_child_data_type.insert_or_assign(key, buf.read<uint16_t>());
 	}
 
 	auto read_smap = [&buf](auto& map) { 

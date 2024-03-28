@@ -69,6 +69,7 @@ struct ui_definitions {
 	ankerl::unordered_dense::map<uint32_t, minui::text_information> d_text_information;
 	ankerl::unordered_dense::map<uint32_t, minui::sound_handle> d_interaction_sound;
 	ankerl::unordered_dense::map<uint32_t, minui::image_information> d_image_information;
+	ankerl::unordered_dense::map<uint32_t, minui::child_data_type> d_child_data_type;
 
 	ankerl::unordered_dense::map<uint32_t, std::string> d_on_update_raw;
 	ankerl::unordered_dense::map<uint32_t, std::string> d_on_gain_focus_raw;
