@@ -599,7 +599,6 @@ public:
 	int32_t current_groupings_size = 0;
 	key_actions focus_actions;
 	std::vector<placed_interactable> current_interactables;
-	bool interactables_out_of_date = true;
 	prompt_mode pmode = prompt_mode::hidden;
 	bool shift_down = false;
 	bool alt_down = false;
@@ -1036,6 +1035,8 @@ void root::destroy_members(ui_node* n) const {
 }
 
 void root::release_node(ui_node* n) {
+	back_out_focus(*n);
+	n->parent = nullptr;
 	auto& free_stock = free_nodes[n->type_id];
 	free_stock.push_back(n);
 }
@@ -1236,13 +1237,12 @@ void root::render() {
 		pop_ups[i].n->render(*this, pop_ups[i].offset, pop_ups);
 	}
 
-	if(interactables_out_of_date) {
-		replace_interactables();
-		interactables_out_of_date = false;
-	}
-	// TODO: render interactables
+	// render interactables
 	if(pmode != prompt_mode::hidden) {
-
+		for(auto& i : current_interactables) {
+			auto l = system.to_screen_space(i.placement);
+			system.interactable(screen_space_point{ l.x, l.y }, i.state, get_foreground_brush(i.element->type_id), get_highlight_brush(i.element->type_id), get_info_brush(i.element->type_id), get_background_brush(i.element->type_id), i.orientation, rendering_modifiers::none);
+		}
 	}
 }
 
@@ -1279,8 +1279,6 @@ void root::change_focus(ui_node* old_focus, ui_node* new_focus) {
 	for(ui_node* gaining = new_focus; gaining && gaining != common_root; gaining = gaining->parent) {
 		gaining->on_gain_focus(*this);
 	}
-
-	interactables_out_of_date = true;
 }
 
 bool root::contains_focus(ui_node const* n) {
@@ -1553,7 +1551,7 @@ void root::repopulate_key_actions() {
 					offset.x = n->position.width;
 			} else if(i_layout.orientation == interactable_orientation::right) {
 				offset.y = n->position.height / 2 - em{ 50 };
-				if(base.x + n->position.width + em{ 100 } > workspace_size().x)
+				if(base.x + n->position.width + em{ 100 } > ws_size.x)
 					offset.x = n->position.width;
 				else
 					offset.x = em{ -100 };
@@ -1565,7 +1563,7 @@ void root::repopulate_key_actions() {
 					offset.y = n->position.height;
 			} else {
 				offset.x = n->position.width / 2 - em{ 50 };
-				if(base.y + n->position.height + em{ 100 } > workspace_size().y)
+				if(base.y + n->position.height + em{ 100 } > ws_size.y)
 					offset.y = n->position.height;
 				else
 					offset.y = em{ -100 };
@@ -1656,8 +1654,6 @@ void root::repopulate_key_actions() {
 			--count_in_group;
 		}
 	}
-
-	interactables_out_of_date = false;
 }
 
 void root::set_window_focus(focus_tracker r) {
@@ -4525,7 +4521,7 @@ void static_text::resize(root& r, layout_position maximum_space, em desired_widt
 
 	if(data.multiline) {
 		desired_width = std::min(std::max(desired_width, data.margins.x + data.margins.width + data.minimum_space), maximum_space.x);
-		text_data->resize_to_width(r.system.to_screen_space(desired_width - (data.margins.x + data.margins.width)));
+		text_data->resize_to_width(r.system, r.system.to_screen_space(desired_width - (data.margins.x + data.margins.width)));
 		desired_height = std::max(desired_height, lh * std::max(1, text_data->get_number_of_text_lines(r.system)));
 	} else {
 		auto text_bounds = text_data->get_single_line_width(r.system);
@@ -4652,7 +4648,7 @@ void text_button::resize(root& r, layout_position maximum_space, em desired_widt
 
 	if(data.multiline) {
 		desired_width = std::min(std::max(desired_width, data.margins.x + data.margins.width + data.minimum_space), maximum_space.x);
-		text_data->resize_to_width(r.system.to_screen_space(desired_width - (data.margins.x + data.margins.width)));
+		text_data->resize_to_width(r.system, r.system.to_screen_space(desired_width - (data.margins.x + data.margins.width)));
 		desired_height = std::max(desired_height, lh * std::max(1, text_data->get_number_of_text_lines(r.system)));
 	} else {
 		auto text_bounds = text_data->get_single_line_width(r.system);
@@ -4939,12 +4935,12 @@ void edit_control::resize(root& r, layout_position maximum_space, em desired_wid
 
 	if(data.multiline) {
 		desired_width = std::min(std::max(desired_width, data.margins.x + data.margins.width + data.minimum_space), maximum_space.x);
-		text_data->resize_to_width(r.system.to_screen_space(desired_width - (data.margins.x + data.margins.width)));
+		text_data->resize_to_width(r.system, r.system.to_screen_space(desired_width - (data.margins.x + data.margins.width)));
 		desired_height = std::max(desired_height, lh * std::max(1, text_data->get_number_of_text_lines(r.system)));
 	} else {
 		auto text_bounds = text_data->get_single_line_width(r.system);
 		desired_height = std::max(desired_height, lh);
-		desired_width = std::min(std::max(desired_width, text_bounds), data.minimum_space) + data.margins.x + data.margins.width), maximum_space.x);
+		desired_width = std::min(std::max(desired_width, std::max(text_bounds, data.minimum_space) + data.margins.x + data.margins.width), maximum_space.x);
 	}
 
 	force_resize(r, layout_position{ desired_width, desired_height });
@@ -4963,37 +4959,6 @@ em edit_control::minimum_height(root& r) {
 	auto lh = text_data->get_line_height(r.system);
 	return lh * std::max(1, text_data->get_number_of_text_lines(r.system));
 }
-
-/*
-layouts:
-stretchy panels (top window) -- used to make room for title, close button (opt), contents
--- fixed number of child elements, each defined relative to the size of the window (may have min. sizes)
-
-pane holder:
---each child takes up entire space; only one shown at a time
-
-column(s)
--- may have one column, a fixed number, or try to fill space
--- may have more than one page
--- fully dynamic vs. monotype
--- variable number of children
-
-minimizing rows / columns
--- attempts to pack elements into left/right or top/bottom as closely as possible
--- has a child that receives all remaining space
-
-row/grid
--- lays out elements with their minimum sizes horz. and then vert.
--- may have fixed number of rows / cols
--- may have more than one page (horz. or vert)
--- variable number of children
-
-table
--- has a fixed top header (in every "page" -- this is done with a containing window)
--- rows each have the same spacing and size -- can be done with col + stretchy panel
--- variable number of rows
-*/
-
 
 void root::load_font_definitions(char const* file_data, size_t file_size) {
 	serialization::in_buffer b{ file_data, file_size };
@@ -5098,8 +5063,8 @@ bool root::on_mouse_move(layout_position p) {
 
 	latest_mouse_position = p;
 	under_mouse = node_repository[0]->mouse_probe(*this, p, layout_position{ em{ 0 }, em{ 0 } }, pop_ups);
+
 	for(uint32_t i = 0; i < pop_ups.size(); ++i) {
-		
 		auto c_result = pop_ups[i].n->mouse_probe(*this, p, pop_ups[i].offset, pop_ups);
 		for(size_t i = 0; i < size_t(mouse_interactivity::count); ++i) {
 			if(c_result.type_array[i].node) {
@@ -5751,6 +5716,23 @@ void root::load_definitions(char const* data, size_t size) {
 		auto bspan = buf.read_fixed<decltype(d_user_mouse_fn_a_raw)::bucket_type>(d_user_mouse_fn_a_raw_buckets);
 		d_user_mouse_fn_a_raw = decltype(d_user_mouse_fn_a_raw)(cspan, bspan);
 	}
+}
+
+bool node_is_visible(root& r, ui_node& n) {
+	if((n.behavior_flags & (behavior::functionally_hidden | behavior::visually_hidden)) != 0)
+		return false;
+	if(&n == r.node_repository[0].get())
+		return true;
+	if(!n.parent)
+		return false;
+	return node_is_visible(r, *n.parent);
+}
+
+void root::on_update() {
+	node_repository[0]->on_update(*this);
+
+	if(system.is_mouse_cursor_visible())
+		on_mouse_move(latest_mouse_position);
 }
 
 #undef minui_aligned_alloc
