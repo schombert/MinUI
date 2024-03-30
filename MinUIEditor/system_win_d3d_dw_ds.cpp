@@ -305,6 +305,62 @@ UINT GetGrouping(WCHAR const* locale) {
 	return nGrouping;
 }
 
+std::wstring win_d2d_dw_ds::get_default_locale() {
+	auto r = get_root_directory();
+	auto locale_container_dir = r->open_directory(NATIVE("locale"));
+	auto locale_path = locale_container_dir->name() + L"\\";
+
+	auto locale_exists = [&](std::wstring_view locale) { 
+		auto ind_locale_dir = locale_container_dir->open_directory(locale);
+		return bool(ind_locale_dir->open_file(NATIVE("locale.dat")));
+	};
+
+	auto all_locales = locale_container_dir->list_directories();
+
+	if(all_locales.empty()) {
+		display_fatal_error_message(L"no locale files found");
+		std::abort();
+	}
+
+	auto find_extension = [&](std::wstring_view locale) {
+		std::wstring expanded_name = locale_path + std::wstring{ locale };
+		for(auto& d : all_locales) {
+			if(d->name().starts_with(expanded_name)) {
+				return d->name().substr(locale_path.length());
+			}
+		}
+		return std::wstring{ };
+	};
+
+	WCHAR buffer[LOCALE_NAME_MAX_LENGTH] = { 0 };
+	GetUserDefaultLocaleName(buffer, LOCALE_NAME_MAX_LENGTH);
+
+	std::wstring lname(buffer);
+
+	do {
+		if(locale_exists(lname))
+			return lname;
+		auto ex = find_extension(lname);
+		if(ex.length() > 0)
+			return ex;
+
+		while(lname.length() > 0) {
+			if(lname.back() == L'-' || lname.back() == L'_')
+				break;
+			lname.pop_back();
+		}
+		lname.pop_back();
+	} while(lname.length() > 0);
+
+	auto eng_ex = find_extension(L"en");
+	if(eng_ex.length() > 0)
+		return eng_ex;
+	if(locale_exists(L"en"))
+		return L"en";
+
+	return all_locales[0]->name().substr(locale_path.length());
+}
+
 void win_d2d_dw_ds::set_locale(native_string_view id) {
 	++language_generation;
 
@@ -362,8 +418,6 @@ void win_d2d_dw_ds::set_locale(native_string_view id) {
 	GetLocaleInfoEx(locale_data.os_locale_is_default ? LOCALE_NAME_USER_DEFAULT : locale_data.app_locale.c_str(), LOCALE_STHOUSAND, locale_data.thousand_sep, 5);
 
 	locale_data.lcid = locale_data.os_locale_is_default ? LocaleNameToLCID(LOCALE_NAME_USER_DEFAULT, 0) : LocaleNameToLCID(locale_data.app_locale.c_str(), LOCALE_ALLOW_NEUTRAL_NAMES);
-
-	//set_window_title();
 }
 void win_d2d_dw_ds::set_ltr_mode(bool is_ltr) {
 	left_to_right = is_ltr;
@@ -1877,19 +1931,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 	}
 }
 
-
-/*
-using formatting_content = std::variant<std::monostate, variable, variable_attributes, inline_icon_id, substitution_mark, extra_formatting, match_set_reference, match_set_terminal_reference, color, color_end>;
-
-struct format_marker {
-	uint16_t position;
-	formatting_content format;
-
-	bool operator<(const format_marker& o) const noexcept {
-		return position < o.position;
-	}
-};
-*/
 
 void apply_default_vertical_options(IDWriteTypography* t) {
 	t->AddFontFeature(DWRITE_FONT_FEATURE{ DWRITE_FONT_FEATURE_TAG_GLYPH_COMPOSITION_DECOMPOSITION, 1 });
@@ -5130,15 +5171,25 @@ void win_d2d_dw_ds::create_window(int32_t window_x_size, int32_t window_y_size, 
 	pixels_per_em = int32_t(std::round(float(base_layout_size) * dpi / 96.0f));
 	window_border_size = (borderless && !fullscreen) ? int32_t(std::round(float(base_border_size) * dpi / 96.0f)) : 0;
 
-	auto wintitle = perform_substitutions(get_hande("window_title"), nullptr, 0);
-	set_window_title(wintitle.text_content.c_str());
-
 	create_device_resources();
 	d2dsetup();
 
 	if(!minui_root)
 		std::abort();
-	minui_root->load_ui_data();
+
+
+	auto def_file = get_root_directory()->open_file(L"defintions.mui");
+
+	if(!def_file) {
+		display_fatal_error_message(L"unable to open defintions.mui");
+		std::abort();
+	}
+
+	auto def_locale = get_default_locale();
+	set_locale(def_locale);
+	minui_root->load_locale_data(def_locale);
+	minui_root->load_definitions_from_file(std::move(def_file));
+	minui_root->make_base_element();
 
 	if(!borderless) {
 

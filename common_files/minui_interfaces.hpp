@@ -598,7 +598,6 @@ public:
 	virtual void minimize() = 0;
 	virtual void restore() = 0;
 	virtual void close() = 0;
-	virtual bool get_ltr() const = 0;
 	virtual void set_window_title(native_char const* t) = 0;
 	virtual bool window_has_focus() const = 0;
 
@@ -625,6 +624,7 @@ public:
 	virtual void set_locale(native_string_view id) = 0;
 	virtual void set_locale_name(native_string name) = 0;
 	virtual void set_ltr_mode(bool is_ltr) = 0;
+	virtual bool get_ltr() const = 0;
 	virtual native_string_view get_locale_name() = 0;
 	virtual native_string_view get_locale() = 0;
 

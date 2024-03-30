@@ -616,8 +616,9 @@ public:
 
 	root(system_interface& system, layout_position initial_size) : system(system), workspace(initial_size) {
 		system.register_root(*this);
-		// make 0 the root
 	}
+
+	void make_base_element();
 
 	void render();
 
@@ -5733,6 +5734,33 @@ void root::on_update() {
 
 	if(system.is_mouse_cursor_visible())
 		on_mouse_move(latest_mouse_position);
+}
+
+void root::on_workspace_resized(resize_type t, layout_position p) {
+	if(t != resize_type::minimize) {
+		if(node_repository[0]->position.width != p.x || node_repository[0]->position.height != p.y) {
+			node_repository[0]->force_resize(*this, p);
+		}
+	}
+}
+
+em root::minimum_width() {
+	return node_repository[0]->minimum_width(*this);
+}
+em root::minimum_height() {
+	return node_repository[0]->minimum_height(*this);
+}
+
+layout_position root::workspace_placement(ui_node& n) {
+	layout_position running_total = layout_position{ n.position.x, n.position.y };
+	for(auto p = n.parent; p; p = p->parent) {
+		running_total = running_total + layout_position{ p->position.x, p->position.y };
+	}
+	return running_total;
+}
+
+void root::make_base_element() {
+	make_control_by_type(nullptr, 0);
 }
 
 #undef minui_aligned_alloc

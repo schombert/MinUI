@@ -658,7 +658,7 @@ public:
 	void on_dpi_change(float new_dpi);
 	void reshow_cursor();
 
-	bool get_ltr(bool ltr) const override {
+	bool get_ltr() const override {
 		return left_to_right;
 	}
 	std::wstring_view get_app_locale() const {
@@ -670,6 +670,7 @@ public:
 	void register_root(root& r) {
 		minui_root = &r;
 	}
+	std::wstring get_default_locale();
 
 	// WINDOW FUNCTIONS
 	layout_position get_workspace() const final;
