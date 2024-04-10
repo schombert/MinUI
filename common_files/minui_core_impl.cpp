@@ -39,8 +39,8 @@ public:
 	void on_hide(root& r) override;
 	void on_update(root& r) override;
 	void on_create(root& r) override;
-	interactable_definition interactable_layout(root& r) override {
-		return r.get_interactable_definition(ui_node::type_id);
+	interactable_result interactable_layout(root& r) override {
+		return interactable_result{ r.get_icon_position(type_id), r.get_interactable_definition(ui_node::type_id) };
 	}
 };
 
@@ -49,15 +49,7 @@ struct type_range {
 	uint32_t const* end;
 };
 
-enum class relative_to : uint8_t {
-	zero,
-	all,
-	half,
-	one_third,
-	two_thirds,
-	one_fourth,
-	three_fourths
-};
+
 inline float to_float(relative_to v) {
 	switch(v) {
 		case relative_to::zero: return 0.0f;
@@ -90,8 +82,8 @@ public:
 	void resize(root& r, layout_position maximum_space, em desired_width, em desired_height) override;
 	em minimum_width(root& r) override;
 	em minimum_height(root& r) override;
-	interactable_definition interactable_layout(root& r) override {
-		return r.get_interactable_definition(ui_node::type_id);
+	interactable_result interactable_layout(root& r) override {
+		return interactable_result{ r.get_icon_position(type_id), r.get_interactable_definition(ui_node::type_id) };
 	}
 };
 
@@ -115,8 +107,8 @@ public:
 	void resize(root& r, layout_position maximum_space, em desired_width, em desired_height) override;
 	em minimum_width(root& r) override;
 	em minimum_height(root& r) override;
-	interactable_definition interactable_layout(root& r) override {
-		return r.get_interactable_definition(ui_node::type_id);
+	interactable_result interactable_layout(root& r) override {
+		return interactable_result{ r.get_icon_position(type_id), r.get_interactable_definition(ui_node::type_id) };
 	}
 };
 
@@ -146,7 +138,7 @@ public:
 	void resize(root& r, layout_position maximum_space, em desired_width, em desired_height) override;
 	em minimum_width(root& r) override;
 	em minimum_height(root& r) override;
-	interactable_definition interactable_layout(root& r) override;
+	interactable_result interactable_layout(root& r) override;
 };
 
 class dynamic_column : public ui_node, imultitype_container {
@@ -184,8 +176,8 @@ public:
 			return static_cast<imultitype_container*>(this);
 		return nullptr;
 	}
-	interactable_definition interactable_layout(root& r) override {
-		return r.get_interactable_definition(ui_node::type_id);
+	interactable_result interactable_layout(root& r) override {
+		return interactable_result{ r.get_icon_position(type_id), r.get_interactable_definition(ui_node::type_id) };
 	}
 	void repaginate(root& r);
 };
@@ -222,8 +214,8 @@ public:
 	void change_page(root& r, int32_t new_page) override;
 	void add_item(void const* data) override;
 	void clear_contents() override;
-	interactable_definition interactable_layout(root& r) override {
-		return r.get_interactable_definition(ui_node::type_id);
+	interactable_result interactable_layout(root& r) override {
+		return interactable_result{ r.get_icon_position(type_id), r.get_interactable_definition(ui_node::type_id) };
 	}
 	iface_base* get_interface(iface v) override {
 		if(v == iface::monotype_container)
@@ -256,8 +248,8 @@ public:
 	em minimum_height(root& r) override;
 	page_information get_page_information() override;
 	void change_page(root& r, int32_t new_page) override;
-	interactable_definition interactable_layout(root& r) override {
-		return r.get_interactable_definition(ui_node::type_id);
+	interactable_result interactable_layout(root& r) override {
+		return interactable_result{ r.get_icon_position(type_id), r.get_interactable_definition(ui_node::type_id) };
 	}
 };
 
@@ -280,8 +272,8 @@ public:
 	void resize(root& r, layout_position maximum_space, em desired_width, em desired_height) override;
 	em minimum_width(root& r) override;
 	em minimum_height(root& r) override;
-	interactable_definition interactable_layout(root& r) override {
-		return r.get_interactable_definition(ui_node::type_id);
+	interactable_result interactable_layout(root& r) override {
+		return interactable_result{ r.get_icon_position(type_id), r.get_interactable_definition(ui_node::type_id) };
 	}
 };
 
@@ -315,8 +307,8 @@ public:
 	void change_page(root& r, int32_t new_page) override;
 	void add_managed_element(root& r, ui_node* n) override;
 	void reset_managed_elements(root& r) override;
-	interactable_definition interactable_layout(root& r) override {
-		return r.get_interactable_definition(ui_node::type_id);
+	interactable_result interactable_layout(root& r) override {
+		return interactable_result{ r.get_icon_position(type_id), r.get_interactable_definition(ui_node::type_id) };
 	}
 	iface_base* get_interface(iface v) override {
 		if(v == iface::multitype_container)
@@ -344,8 +336,8 @@ public:
 	em minimum_width(root& r) override;
 	em minimum_height(root& r) override;
 	void on_reload(root& r) override;
-	interactable_definition interactable_layout(root& r) override {
-		return r.get_interactable_definition(ui_node::type_id);
+	interactable_result interactable_layout(root& r) override {
+		return interactable_result{ r.get_icon_position(type_id), r.get_interactable_definition(ui_node::type_id) };
 	}
 	iface_base* get_interface(iface v) override {
 		if(v == iface::static_text)
@@ -374,8 +366,8 @@ public:
 	em minimum_width(root& r) override;
 	em minimum_height(root& r) override;
 	void on_reload(root& r) override;
-	interactable_definition interactable_layout(root& r) override {
-		return interactable_definition{ r.get_icon_position(type_id), interactable_orientation::left, interactable_placement::internal };
+	interactable_result interactable_layout(root& r) override {
+		return interactable_result{ layout_position{ }, interactable_definition{ interactable_orientation::left, interactable_placement::internal } };
 	}
 	iface_base* get_interface(iface v) override {
 		if(v == iface::static_text)
@@ -411,8 +403,8 @@ public:
 	em minimum_width(root& r) override;
 	em minimum_height(root& r) override;
 	void recalculate_icon_position(root& r);
-	interactable_definition interactable_layout(root& r) override {
-		return r.get_interactable_definition(ui_node::type_id);
+	interactable_result interactable_layout(root& r) override {
+		return interactable_result{ r.get_icon_position(type_id), r.get_interactable_definition(ui_node::type_id) };
 	}
 	iface_base* get_interface(iface v) override {
 		if(v == iface::control)
@@ -449,11 +441,11 @@ public:
 	void on_gain_focus(root& r) override;
 	void on_lose_focus(root& r) override;
 	void on_text_update(root& r) override;
-	interactable_definition interactable_layout(root& r) override {
+	interactable_result interactable_layout(root& r) override {
 		if(r.contains_focus(this))
-			return interactable_definition{ layout_position{ em{ 0 }, em{ 0 } }, interactable_orientation::left, interactable_placement::suppressed };
+			return interactable_result{ layout_position{ }, interactable_definition{ interactable_orientation::left, interactable_placement::suppressed } };
 		else
-			return interactable_definition{ r.get_icon_position(type_id), interactable_orientation::left, interactable_placement::internal };
+			return interactable_result{ layout_position{ }, interactable_definition{ interactable_orientation::left, interactable_placement::internal } };
 	}
 	iface_base* get_interface(iface v) override {
 		if(v == iface::static_text)
@@ -484,7 +476,7 @@ public:
 	probe_result mouse_probe(root& r, layout_position probe_pos, layout_position offset, std::vector<postponed_render>& postponed) override;
 	void on_update(root& r) override;
 	void on_lbutton(root& r, layout_position pos) override;
-	interactable_definition interactable_layout(root& r) override;
+	interactable_result interactable_layout(root& r) override;
 
 	iface_base* get_interface(iface v) override {
 		if(v == iface::control)
@@ -511,8 +503,8 @@ public:
 	void on_create(root& r) override;
 	void on_reload(root& r) override;
 	void force_resize(root& r, layout_position size) override;
-	interactable_definition interactable_layout(root& r) override {
-		return interactable_definition{ r.get_icon_position(type_id), interactable_orientation::left, interactable_placement::suppressed };
+	interactable_result interactable_layout(root& r) override {
+		return interactable_result{ layout_position{ }, interactable_definition{ interactable_orientation::left, interactable_placement::suppressed } };
 	}
 	iface_base* get_interface(iface v) override {
 		if(v == iface::static_text)
@@ -1527,17 +1519,18 @@ void root::repopulate_key_actions() {
 		auto i_layout = n->interactable_layout(*this);
 		n->behavior_flags |= behavior::interaction_flagged;
 		if(i_layout.placement == interactable_placement::internal) {
+			auto ico_pos = get_icon_position(n->type_id);
 			if(display_as_group)
 				current_interactables.push_back(placed_interactable{
 					n,
-					layout_rect{ i_layout.relative_position.x, i_layout.relative_position.y, em{ 100 }, em{ 100 } } + workspace_placement(*n),
+					layout_rect{ ico_pos.x, ico_pos.y, em{ 100 }, em{ 100 } } + workspace_placement(*n),
 					interactable_state(interactable_state::group, uint8_t(group + 1)),
 					i_layout.orientation
 				});
 			else
 				current_interactables.push_back(placed_interactable{
 					n,
-					layout_rect{ i_layout.relative_position.x, i_layout.relative_position.y, em{ 100 }, em{ 100 } } + workspace_placement(*n),
+					layout_rect{ ico_pos.x, ico_pos.y, em{ 100 }, em{ 100 } } + workspace_placement(*n),
 					interactable_state(interactable_state::key, uint8_t(group + 1)),
 					i_layout.orientation
 				});
@@ -1943,15 +1936,17 @@ void proportional_window::render(root& r, layout_position offset, std::vector<po
 
 	render_background(r, r.get_background_definition(type_id), offset, *this);
 
-	auto ico_pos = r.get_icon_position(ui_node::type_id);
+	if((behavior_flags & behavior::transparent_to_focus) == 0) {
+		auto ico_pos = r.get_icon_position(ui_node::type_id);
 
-	if(r.pmode == prompt_mode::hidden || (ui_node::behavior_flags & behavior::interaction_flagged) == 0) {
-		r.system.icon(r.get_icon(ui_node::type_id),
-			screen_space_rect{
-				r.system.to_screen_space(offset.x + ico_pos.x), r.system.to_screen_space(offset.y + ico_pos.y),
-				r.system.to_screen_space(em{ 100 }), r.system.to_screen_space(em{ 100 })
-			},
-			r.get_foreground_brush(ui_node::type_id));
+		if(r.pmode == prompt_mode::hidden || (ui_node::behavior_flags & behavior::interaction_flagged) == 0) {
+			r.system.icon(r.get_icon(ui_node::type_id),
+				screen_space_rect{
+					r.system.to_screen_space(offset.x + ico_pos.x), r.system.to_screen_space(offset.y + ico_pos.y),
+					r.system.to_screen_space(em{ 100 }), r.system.to_screen_space(em{ 100 })
+				},
+				r.get_foreground_brush(ui_node::type_id));
+		}
 	}
 
 	for(auto c : children) {
@@ -2473,16 +2468,16 @@ void page_control_icon_button::on_lbutton(root& r, layout_position pos) {
 
 }
 
-interactable_definition page_control_icon_button::interactable_layout(root& r) {
+interactable_result page_control_icon_button::interactable_layout(root& r) {
 	auto data = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(this) + sizeof(page_control_icon_button));
 	auto position = (*data & page_control_icon_button::position_mask);
 	switch(position) {
 		case page_control_icon_button::right:
-			return interactable_definition{ layout_position{ em{ 0 }, em{ 0 } }, interactable_orientation::right, interactable_placement::external };
+			return interactable_result{ layout_position{ }, interactable_definition{ interactable_orientation::right, interactable_placement::external } };
 		case page_control_icon_button::bottom:
-			return interactable_definition{ layout_position{ em{ 0 }, em{ 0 } }, interactable_orientation::below, interactable_placement::external };
+			return interactable_result{ layout_position{ }, interactable_definition{ interactable_orientation::below, interactable_placement::external } };
 		default:
-			return interactable_definition{ layout_position{ em{ 0 }, em{ 0 } }, interactable_orientation::above, interactable_placement::external };
+			return interactable_result{ layout_position{ }, interactable_definition{ interactable_orientation::above, interactable_placement::external } };
 	}
 }
 
@@ -2612,14 +2607,14 @@ void page_controls::on_update(root& r) {
 			c->on_update(r);
 	}
 }
-interactable_definition page_controls::interactable_layout(root& r) {
+interactable_result page_controls::interactable_layout(root& r) {
 	if(r.contains_focus(this)) {
-		return interactable_definition{ layout_position{ em{ 0 }, em{ 0 } }, interactable_orientation::left, interactable_placement::suppressed };
+		return interactable_result{ layout_position{ }, { interactable_orientation::left, interactable_placement::suppressed } };
 	} else {
 		auto pos = (vertical_arrangement && position.height > em{ 190 }) ?
 			layout_position{ position.width / 2 - em{ 50 }, em{ 0 } } :
 			layout_position{ em{ 0 }, position.height / 2 - em{ 50 } };
-		return interactable_definition{ pos, interactable_orientation::left, interactable_placement::internal};
+		return interactable_result{ pos, interactable_definition{ interactable_orientation::left, interactable_placement::internal } };
 	}
 }
 void page_controls::on_create(root& r) {

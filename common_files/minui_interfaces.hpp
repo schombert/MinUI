@@ -417,10 +417,18 @@ enum class interactable_placement : uint8_t {
 	internal, external, suppressed
 };
 struct interactable_definition {
-	layout_position relative_position;
 	interactable_orientation orientation = interactable_orientation::left;
 	interactable_placement placement = interactable_placement::internal;
 };
+struct interactable_result {
+	layout_position icon_pos;
+	interactable_orientation orientation = interactable_orientation::left;
+	interactable_placement placement = interactable_placement::internal;
+
+	interactable_result() = default;
+	interactable_result(layout_position icon_pos, interactable_definition d) : icon_pos(icon_pos), orientation(d.orientation), placement(d.placement) { }
+};
+
 
 struct icon_handle {
 	int32_t value = -1;
@@ -549,7 +557,7 @@ public:
 	virtual void on_focus(system_interface&) = 0;
 	virtual void on_lose_focus(system_interface&) = 0;
 	virtual void move_cursor_by_screen_pt(system_interface& win, screen_space_point pt, bool extend_selection) = 0;
-	virtual void consume_mouse_event(system_interface& win, int32_t x, int32_t y, uint32_t buttons);
+	virtual void consume_mouse_event(system_interface& win, int32_t x, int32_t y, uint32_t buttons) = 0;
 };
 
 class static_text_provider : public istatic_text {
@@ -825,7 +833,7 @@ public:
 	}
 	
 	virtual probe_result mouse_probe(root& r, layout_position probe_pos, layout_position offset, std::vector<postponed_render>& postponed) = 0;
-	virtual interactable_definition interactable_layout(root& r) = 0;
+	virtual interactable_result interactable_layout(root& r) = 0;
 	virtual void on_lbutton(root& r, layout_position pos) { }
 	virtual void on_rbutton(root& r, layout_position pos) { }
 	virtual void on_lbutton_up(root& r) { }
@@ -860,6 +868,15 @@ struct variable_definition {
 struct variable_definition_range {
 	variable_definition const* start;
 	variable_definition const* end;
+};
+enum class relative_to : uint8_t {
+	zero,
+	all,
+	half,
+	one_third,
+	two_thirds,
+	one_fourth,
+	three_fourths
 };
 struct relative_child_def {
 	relative_to x_start_base;
