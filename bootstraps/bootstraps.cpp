@@ -51,10 +51,10 @@ int main() {
 			defs.brushes.push_back(brush_def{
 				true,
 				minui::brush_color{ 1.0f, 1.0f, 1.0f, 1.0f},
-				L"yellowpaper.png",
+				L"assets\\yellowpaper.png",
 				true,
 				minui::brush_color{ 0.8f, 0.8f, 0.8f, 1.0f },
-				L"yellowpaper_bw.png",
+				L"assets\\yellowpaper_bw.png",
 				-0.1f, - 0.05f, -0.15f
 			});
 			// 1
@@ -97,6 +97,57 @@ int main() {
 				L"",
 				0.1f, 0.05f, 0.15f
 			});
+		}
+		{ // icons
+			// 0 -- labels and groups
+			defs.icons.emplace_back();
+			defs.icons[0].xsize = minui::em{ 100 };
+			defs.icons[0].ysize = minui::em{ 100 };
+			defs.icons[0].sub_slots.resize(8);
+
+			for(uint32_t i = 0; i < 8; ++i)
+				defs.icons[0].sub_slots[i].is_svg = true;
+			
+			defs.icons[0].sub_slots[uint32_t(minui::interactable_orientation::left)].file = L"assets\\left_select_n.svg";
+			defs.icons[0].sub_slots[uint32_t(minui::interactable_orientation::right)].file = L"assets\\right_select_n.svg";
+			defs.icons[0].sub_slots[uint32_t(minui::interactable_orientation::above)].file = L"assets\\top_select_n.svg";
+			defs.icons[0].sub_slots[uint32_t(minui::interactable_orientation::below)].file = L"assets\\bottom_select_n.svg";
+			defs.icons[0].sub_slots[uint32_t(minui::interactable_orientation::left) + 4].file = L"assets\\group_select_n.svg";
+			defs.icons[0].sub_slots[uint32_t(minui::interactable_orientation::right) + 4].file = L"assets\\group_select_n.svg";
+			defs.icons[0].sub_slots[uint32_t(minui::interactable_orientation::above) + 4].file = L"assets\\group_select_n.svg";
+			defs.icons[0].sub_slots[uint32_t(minui::interactable_orientation::below) + 4].file = L"assets\\group_select_n.svg";
+
+			// 1 - page button
+			defs.icons.emplace_back();
+			defs.icons[1].xsize = minui::em{ 100 };
+			defs.icons[1].ysize = minui::em{ 100 };
+			defs.icons[1].sub_slots.resize(1);
+			defs.icons[1].sub_slots[0].is_svg = true;
+			defs.icons[1].sub_slots[0].file = L"assets\\control_prev_prev.svg";
+
+			// 2 - page button
+			defs.icons.emplace_back();
+			defs.icons[2].xsize = minui::em{ 100 };
+			defs.icons[2].ysize = minui::em{ 100 };
+			defs.icons[2].sub_slots.resize(1);
+			defs.icons[2].sub_slots[0].is_svg = true;
+			defs.icons[2].sub_slots[0].file = L"assets\\control_prev.svg";
+
+			// 3 - page button
+			defs.icons.emplace_back();
+			defs.icons[3].xsize = minui::em{ 100 };
+			defs.icons[3].ysize = minui::em{ 100 };
+			defs.icons[3].sub_slots.resize(1);
+			defs.icons[3].sub_slots[0].is_svg = true;
+			defs.icons[3].sub_slots[0].file = L"assets\\control_next.svg";
+
+			// 4 - page button
+			defs.icons.emplace_back();
+			defs.icons[4].xsize = minui::em{ 100 };
+			defs.icons[4].ysize = minui::em{ 100 };
+			defs.icons[4].sub_slots.resize(1);
+			defs.icons[4].sub_slots[0].is_svg = true;
+			defs.icons[4].sub_slots[0].file = L"assets\\control_next_next.svg";
 		}
 
 		{ // main window
