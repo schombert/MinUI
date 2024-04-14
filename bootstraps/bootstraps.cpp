@@ -26,26 +26,42 @@ int main() {
 	}
 
 	{
+		// fonts file
+
+
+		serialization::out_buffer b;
+
+		b.write(uint32_t(1)); // number of fonts
+		{ // per font
+			b.write(std::wstring(L"Source Serif 4"));
+			b.write(100.0f); // span
+			b.write(int32_t(400)); // weight
+			b.write(int32_t(0)); // top lead
+			b.write(int32_t(0)); // bottom lead
+			b.write(1.0f); // scale
+			b.write(minui::text::font_type::roman);
+			b.write(false); // oblique
+			b.write(uint32_t(0)); // number of fallbacks
+		}
+		b.finalize();
+
+		std::wstring fname{ L"fonts.dat" };
+		HANDLE file_handle = CreateFileW(fname.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+			FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+		if(file_handle != INVALID_HANDLE_VALUE) {
+			WriteFile(file_handle, b.data(), DWORD(b.size()), nullptr, nullptr);
+			SetEndOfFile(file_handle);
+			CloseHandle(file_handle);
+		}
+	}
+
+	{
 		// compiled ui definitions
-
 		ui_definitions defs;
-		constexpr auto num_elements = 6;
-
-		defs.d_icon_position.resize(num_elements);
-		defs.d_default_position.resize(num_elements);
-		defs.d_interactable_definition.resize(num_elements);
-		defs.d_icon.resize(num_elements);
-		defs.d_class.resize(num_elements);
-		defs.d_standard_flags.resize(num_elements);
-		defs.d_foreground_brush.resize(num_elements);
-		defs.d_background_brush.resize(num_elements);
-		defs.d_highlight_brush.resize(num_elements);
-		defs.d_info_brush.resize(num_elements);
-		defs.d_variable_definition.resize(num_elements);
-		defs.d_total_variable_size.resize(num_elements);
-		defs.d_background_definition.resize(num_elements);
-
-
+	
+		{ // fonts
+			
+		}
 		{ // brushes
 			// 0
 			defs.brushes.push_back(brush_def{
@@ -148,7 +164,39 @@ int main() {
 			defs.icons[4].sub_slots.resize(1);
 			defs.icons[4].sub_slots[0].is_svg = true;
 			defs.icons[4].sub_slots[0].file = L"assets\\control_next_next.svg";
+
+			// 5 - list button
+			defs.icons.emplace_back();
+			defs.icons[5].xsize = minui::em{ 100 };
+			defs.icons[5].ysize = minui::em{ 100 };
+			defs.icons[5].sub_slots.resize(1);
+			defs.icons[5].sub_slots[0].is_svg = true;
+			defs.icons[5].sub_slots[0].file = L"assets\\control_list.svg";
+
+			// 6 - pages
+			defs.icons.emplace_back();
+			defs.icons[6].xsize = minui::em{ 100 };
+			defs.icons[6].ysize = minui::em{ 100 };
+			defs.icons[6].sub_slots.resize(1);
+			defs.icons[6].sub_slots[0].is_svg = true;
+			defs.icons[6].sub_slots[0].file = L"assets\\control_pages.svg";
 		}
+
+		constexpr auto num_elements = 6;
+
+		defs.d_icon_position.resize(num_elements);
+		defs.d_default_position.resize(num_elements);
+		defs.d_interactable_definition.resize(num_elements);
+		defs.d_icon.resize(num_elements);
+		defs.d_class.resize(num_elements);
+		defs.d_standard_flags.resize(num_elements);
+		defs.d_foreground_brush.resize(num_elements);
+		defs.d_background_brush.resize(num_elements);
+		defs.d_highlight_brush.resize(num_elements);
+		defs.d_info_brush.resize(num_elements);
+		defs.d_variable_definition.resize(num_elements);
+		defs.d_total_variable_size.resize(num_elements);
+		defs.d_background_definition.resize(num_elements);
 
 		{ // main window
 			defs.d_icon_position[0] = minui::layout_position{ minui::em{ 0 }, minui::em{ 0 } };
@@ -177,6 +225,124 @@ int main() {
 			// TODO: children
 		}
 
+		{ // generic page control left left
+			defs.d_icon_position[1] = minui::layout_position{ minui::em{ 0 }, minui::em{ 0 } };
+			defs.d_default_position[1] = minui::layout_rect{ minui::em{ 0 }, minui::em{ 0 }, minui::em{ 100 }, minui::em{ 100 } };
+			defs.d_interactable_definition[1] = minui::interactable_definition{ minui::interactable_orientation::left, minui::interactable_placement::internal };
+			defs.d_icon[1] = minui::icon_handle{ 1 };
+			defs.d_class[1] = 13;
+			defs.d_standard_flags[1] = minui::behavior::interaction_command | minui::behavior::visually_interactable;
+			defs.d_foreground_brush[1] = 1;
+			defs.d_background_brush[1] = 0;
+			defs.d_highlight_brush[1] = 2;
+			defs.d_info_brush[1] = 3;
+			defs.d_total_variable_size[1] = 0;
+			defs.d_background_definition[1] = minui::background_definition{
+				minui::image_handle{ -1 },
+				minui::layout_rect{ minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 } }, // ext. edge offsets
+				minui::layout_rect{ minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 } }, // interior region
+				uint16_t(-1), // brush
+				0, // left border
+				0, //right border
+				0, //top border
+				0 //bottom border
+			};
+		}
+		{ // generic page control left
+			defs.d_icon_position[2] = minui::layout_position{ minui::em{ 0 }, minui::em{ 0 } };
+			defs.d_default_position[2] = minui::layout_rect{ minui::em{ 0 }, minui::em{ 0 }, minui::em{ 100 }, minui::em{ 100 } };
+			defs.d_interactable_definition[2] = minui::interactable_definition{ minui::interactable_orientation::left, minui::interactable_placement::internal };
+			defs.d_icon[2] = minui::icon_handle{ 2 };
+			defs.d_class[2] = 13;
+			defs.d_standard_flags[2] = minui::behavior::interaction_command | minui::behavior::visually_interactable;
+			defs.d_foreground_brush[2] = 1;
+			defs.d_background_brush[2] = 0;
+			defs.d_highlight_brush[2] = 2;
+			defs.d_info_brush[2] = 3;
+			defs.d_total_variable_size[2] = 0;
+			defs.d_background_definition[2] = minui::background_definition{
+				minui::image_handle{ -1 },
+				minui::layout_rect{ minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 } }, // ext. edge offsets
+				minui::layout_rect{ minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 } }, // interior region
+				uint16_t(-1), // brush
+				0, // left border
+				0, //right border
+				0, //top border
+				0 //bottom border
+			};
+		}
+		{ // generic page control right
+			defs.d_icon_position[3] = minui::layout_position{ minui::em{ 0 }, minui::em{ 0 } };
+			defs.d_default_position[3] = minui::layout_rect{ minui::em{ 0 }, minui::em{ 0 }, minui::em{ 100 }, minui::em{ 100 } };
+			defs.d_interactable_definition[3] = minui::interactable_definition{ minui::interactable_orientation::left, minui::interactable_placement::internal };
+			defs.d_icon[3] = minui::icon_handle{ 3 };
+			defs.d_class[3] = 13;
+			defs.d_standard_flags[3] = minui::behavior::interaction_command | minui::behavior::visually_interactable;
+			defs.d_foreground_brush[3] = 1;
+			defs.d_background_brush[3] = 0;
+			defs.d_highlight_brush[3] = 2;
+			defs.d_info_brush[3] = 3;
+			defs.d_total_variable_size[3] = 0;
+			defs.d_background_definition[3] = minui::background_definition{
+				minui::image_handle{ -1 },
+				minui::layout_rect{ minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 } }, // ext. edge offsets
+				minui::layout_rect{ minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 } }, // interior region
+				uint16_t(-1), // brush
+				0, // left border
+				0, //right border
+				0, //top border
+				0 //bottom border
+			};
+		}
+		{ // generic page control right right
+			defs.d_icon_position[4] = minui::layout_position{ minui::em{ 0 }, minui::em{ 0 } };
+			defs.d_default_position[4] = minui::layout_rect{ minui::em{ 0 }, minui::em{ 0 }, minui::em{ 100 }, minui::em{ 100 } };
+			defs.d_interactable_definition[4] = minui::interactable_definition{ minui::interactable_orientation::left, minui::interactable_placement::internal };
+			defs.d_icon[4] = minui::icon_handle{ 4 };
+			defs.d_class[4] = 13;
+			defs.d_standard_flags[4] = minui::behavior::interaction_command | minui::behavior::visually_interactable;
+			defs.d_foreground_brush[4] = 1;
+			defs.d_background_brush[4] = 0;
+			defs.d_highlight_brush[4] = 2;
+			defs.d_info_brush[4] = 3;
+			defs.d_total_variable_size[4] = 0;
+			defs.d_background_definition[4] = minui::background_definition{
+				minui::image_handle{ -1 },
+				minui::layout_rect{ minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 } }, // ext. edge offsets
+				minui::layout_rect{ minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 } }, // interior region
+				uint16_t(-1), // brush
+				0, // left border
+				0, //right border
+				0, //top border
+				0 //bottom border
+			};
+		}
+		{ // generic page control text
+			defs.d_icon_position[5] = minui::layout_position{ minui::em{ 0 }, minui::em{ 0 } };
+			defs.d_default_position[5] = minui::layout_rect{ minui::em{ 0 }, minui::em{ 0 }, minui::em{ 100 }, minui::em{ 100 } };
+			defs.d_interactable_definition[5] = minui::interactable_definition{ minui::interactable_orientation::left, minui::interactable_placement::internal };
+			defs.d_icon[5] = minui::icon_handle{ -1 };
+			defs.d_class[5] = 14;
+			defs.d_standard_flags[5] = 0;
+			defs.d_foreground_brush[5] = 1;
+			defs.d_background_brush[5] = 0;
+			defs.d_highlight_brush[5] = 2;
+			defs.d_info_brush[5] = 3;
+			defs.d_total_variable_size[5] = 0;
+			defs.d_background_definition[5] = minui::background_definition{
+				minui::image_handle{ -1 },
+				minui::layout_rect{ minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 } }, // ext. edge offsets
+				minui::layout_rect{ minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 } }, // interior region
+				uint16_t(-1), // brush
+				0, // left border
+				0, //right border
+				0, //top border
+				0 //bottom border
+			};
+			// TODO text information
+		}
+
+		// TODO: rewrite how text information is saved / loaded
 
 		defs.save_to_file(L"ui.dat");
 	}
