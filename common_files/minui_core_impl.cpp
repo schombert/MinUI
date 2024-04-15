@@ -673,7 +673,7 @@ public:
 	ankerl::unordered_dense::map_view<uint32_t, const bool> d_horizontal_orientation;
 	ankerl::unordered_dense::map_view<uint32_t, const column_properties> d_column_properties;
 	ankerl::unordered_dense::map_view<uint32_t, const page_ui_definitions> d_page_ui_definitions;
-	ankerl::unordered_dense::map_view<uint32_t, const text_information> d_text_information;
+	ankerl::unordered_dense::map<uint32_t, text_information> d_text_information;
 	ankerl::unordered_dense::map_view<uint32_t, const sound_handle> d_interaction_sound;
 	ankerl::unordered_dense::map_view<uint32_t, const image_information> d_image_information;
 	ankerl::unordered_dense::map_view<uint32_t, const child_data_type> d_child_data_type;
@@ -795,12 +795,17 @@ public:
 		else
 			return page_ui_definitions{ };
 	}
-	text_information get_text_information(uint32_t type_id) const {
-		auto r = d_text_information.atomic_find(type_id);
-		if(r)
-			return *r;
-		else
+	text_information get_text_information(uint32_t type_id) {
+		auto r = d_text_information.find(type_id);
+		if(r != d_text_information.end()) {
+			if(!r->second.text_resolved) {
+				r->second.default_text = system.get_hande(std::string_view(file_base + r->second.default_text_key.file_offset, r->second.default_text_key.count));
+				r->second.text_resolved = true;
+			}
+			return r->second;
+		} else {
 			return text_information{ };
+		}
 	}
 	sound_handle get_interaction_sound(uint32_t type_id) const {
 		auto r = d_interaction_sound.atomic_find(type_id);
@@ -5574,7 +5579,6 @@ void root::load_definitions(char const* data, size_t size) {
 	auto d_column_properties_content = buf.read<uint32_t>();
 	auto d_page_ui_definitions_buckets = buf.read<uint32_t>();
 	auto d_page_ui_definitions_content = buf.read<uint32_t>();
-	auto d_text_information_buckets = buf.read<uint32_t>();
 	auto d_text_information_content = buf.read<uint32_t>();
 	auto d_interaction_sound_buckets = buf.read<uint32_t>();
 	auto d_interaction_sound_content = buf.read<uint32_t>();
@@ -5648,9 +5652,11 @@ void root::load_definitions(char const* data, size_t size) {
 		d_page_ui_definitions = decltype(d_page_ui_definitions)(cspan, bspan);
 	}
 	{
-		auto cspan = buf.read_fixed<decltype(d_text_information)::value_container_type>(d_text_information_content);
-		auto bspan = buf.read_fixed<decltype(d_text_information)::bucket_type>(d_text_information_buckets);
-		d_text_information = decltype(d_text_information)(cspan, bspan);
+		auto cspan = buf.read_fixed<minui::saved_text_information>(d_text_information_content);
+		d_text_information.clear();
+		for(auto& ti : cspan) {
+			d_text_information.insert_or_assign(ti.type_id, ti);
+		}
 	}
 	{
 		auto cspan = buf.read_fixed<decltype(d_interaction_sound)::value_container_type>(d_interaction_sound_content);

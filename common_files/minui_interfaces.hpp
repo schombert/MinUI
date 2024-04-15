@@ -922,15 +922,33 @@ struct page_ui_definitions {
 	uint16_t text = 0;
 	bool vertical_arrangement = false;
 };
-struct text_information {
+struct saved_text_information {
 	layout_rect margins;
-
+	array_reference default_text_key;
+	uint32_t type_id;
 	text::font_handle font;
-	text::handle default_text;
-	text::content_alignment alginment;
 	em minimum_space;
+	text::content_alignment alignment;
 	bool multiline;
 };
+struct text_information {
+	layout_rect margins;
+	text::handle default_text;
+	array_reference default_text_key;
+	text::font_handle font;
+	em minimum_space;
+	text::content_alignment alignment;
+	bool multiline;
+	bool text_resolved = false;
+
+	text_information() noexcept = default;
+	text_information(text_information const&) noexcept = default;
+	text_information(text_information&&) noexcept = default;
+	text_information(saved_text_information const& i) : margins(i.margins), default_text_key(i.default_text_key), font(i.font), minimum_space(i.minimum_space), alignment(i.alignment), multiline(i.multiline), text_resolved(false) {}
+
+};
+
+
 struct image_information {
 	layout_rect margins;
 	em fixed_vertical_size;

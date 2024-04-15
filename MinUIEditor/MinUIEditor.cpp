@@ -69,7 +69,6 @@ void ui_definitions::save_to_file(std::wstring_view file_name) {
 	buf.write(uint32_t(d_column_properties.size()));
 	buf.write(uint32_t(d_page_ui_definitions.bucket_count()));
 	buf.write(uint32_t(d_page_ui_definitions.size()));
-	buf.write(uint32_t(d_text_information.bucket_count()));
 	buf.write(uint32_t(d_text_information.size()));
 	buf.write(uint32_t(d_interaction_sound.bucket_count()));
 	buf.write(uint32_t(d_interaction_sound.size()));
@@ -158,8 +157,34 @@ void ui_definitions::save_to_file(std::wstring_view file_name) {
 	buf.write_fixed(d_column_properties.m_buckets, d_column_properties.bucket_count());
 	buf.write_fixed(d_page_ui_definitions.m_values.data(), d_page_ui_definitions.size());
 	buf.write_fixed(d_page_ui_definitions.m_buckets, d_page_ui_definitions.bucket_count());
+
 	buf.write_fixed(d_text_information.m_values.data(), d_text_information.size());
 	buf.write_fixed(d_text_information.m_buckets, d_text_information.bucket_count());
+
+	{
+		std::vector<minui::saved_text_information> temp;
+		temp.resize(d_text_information.size());
+		for(size_t i = 0; i < d_text_information.size(); ++i) {
+			temp[i].alignment = d_text_information.m_values[i].second.alginment;
+			temp[i].font = d_text_information.m_values[i].second.font;
+			temp[i].margins = d_text_information.m_values[i].second.margins;
+			temp[i].minimum_space = d_text_information.m_values[i].second.minimum_space;
+			temp[i].multiline = d_text_information.m_values[i].second.multiline;
+			temp[i].default_text_key.count = uint32_t(d_text_information.m_values[i].second.default_text.size());
+			temp[i].type_id = d_text_information.m_values[i].first;
+		}
+
+		auto base_addr = buf.get_data_position() + offsetof(minui::saved_text_information, default_text_key) + offsetof(minui::array_reference, file_offset);
+		buf.write_fixed(temp.data(), d_text_information.size());
+
+		for(size_t i = 0; i < d_text_information.size(); ++i) {
+			buf.write_relocation(base_addr, [i, this](serialization::out_buffer& b) {
+				b.write_fixed(d_text_information.m_values[i].second.default_text.data(), uint32_t(d_text_information.m_values[i].second.default_text.size()));
+			});
+			base_addr += sizeof(minui::saved_text_information);
+		}
+	}
+
 	buf.write_fixed(d_interaction_sound.m_values.data(), d_interaction_sound.size());
 	buf.write_fixed(d_interaction_sound.m_buckets, d_interaction_sound.bucket_count());
 	buf.write_fixed(d_image_information.m_values.data(), d_image_information.size());
@@ -274,7 +299,18 @@ void ui_definitions::save_to_project_file(std::wstring_view file_name) {
 	write_umap(d_horizontal_orientation);
 	write_umap(d_column_properties);
 	write_umap(d_page_ui_definitions);
-	write_umap(d_text_information);
+	
+	buf.write(uint32_t(d_text_information.size()));
+	for(auto& ti : d_text_information) {
+		buf.write(ti.first);
+		buf.write(ti.second.alginment);
+		buf.write(ti.second.default_text);
+		buf.write(ti.second.font);
+		buf.write(ti.second.margins);
+		buf.write(ti.second.minimum_space);
+		buf.write(ti.second.multiline);
+	}
+
 	write_umap(d_interaction_sound);
 	write_umap(d_image_information);
 	write_umap(d_child_data_type);
@@ -431,8 +467,18 @@ void ui_definitions::load_from_project_file(std::wstring_view file_name) {
 	d_text_information.clear();
 	for(uint32_t i = 0; i < numfc; ++i) {
 		auto key = buf.read<uint32_t>();
-		d_text_information.insert_or_assign(key, buf.read<minui::text_information>());
+		text_information_def temp;
+		temp.alginment = buf.read<decltype(temp.alginment)>();
+		temp.default_text = std::string{ buf.read<std::string_view>() };
+		temp.font = buf.read<decltype(temp.font)>();
+		temp.margins = buf.read<decltype(temp.margins)>();
+		temp.minimum_space = buf.read<decltype(temp.minimum_space)>();
+		temp.multiline = buf.read<decltype(temp.multiline)>();
+
+		d_text_information.insert_or_assign(key, temp);
+
 	}
+
 	numfc = buf.read<uint32_t>();
 	d_interaction_sound.clear();
 	for(uint32_t i = 0; i < numfc; ++i) {

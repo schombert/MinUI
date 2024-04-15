@@ -41,6 +41,15 @@ struct image_def {
 	std::vector< sub_image_def> sub_slots;
 };
 
+struct text_information_def {
+	std::string default_text;
+	minui::layout_rect margins;
+	minui::text::font_handle font;
+	minui::text::content_alignment alginment;
+	minui::em minimum_space;
+	bool multiline;
+};
+
 struct ui_definitions {
 	std::vector<sound_def> sounds;
 	std::vector<brush_def> brushes;
@@ -66,7 +75,7 @@ struct ui_definitions {
 	ankerl::unordered_dense::map<uint32_t, bool> d_horizontal_orientation;
 	ankerl::unordered_dense::map<uint32_t, minui::column_properties> d_column_properties;
 	ankerl::unordered_dense::map<uint32_t, minui::page_ui_definitions> d_page_ui_definitions;
-	ankerl::unordered_dense::map<uint32_t, minui::text_information> d_text_information;
+	ankerl::unordered_dense::map<uint32_t, text_information_def> d_text_information;
 	ankerl::unordered_dense::map<uint32_t, minui::sound_handle> d_interaction_sound;
 	ankerl::unordered_dense::map<uint32_t, minui::image_information> d_image_information;
 	ankerl::unordered_dense::map<uint32_t, minui::child_data_type> d_child_data_type;
