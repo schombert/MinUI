@@ -799,7 +799,10 @@ public:
 		auto r = d_text_information.find(type_id);
 		if(r != d_text_information.end()) {
 			if(!r->second.text_resolved) {
-				r->second.default_text = system.get_hande(std::string_view(file_base + r->second.default_text_key.file_offset, r->second.default_text_key.count));
+				if(r->second.default_text_key.count != 0)
+					r->second.default_text = system.get_hande(std::string_view(file_base + r->second.default_text_key.file_offset, r->second.default_text_key.count));
+				else
+					r->second.default_text = minui::text::handle{ };
 				r->second.text_resolved = true;
 			}
 			return r->second;
@@ -2528,9 +2531,12 @@ void page_control_text::on_update(root& r) {
 	auto max_page = r.system.int_to_text(range.total_pages, false);
 
 	if(*data == page_control_text::horizontal) {
+		text_data->set_is_multiline(r.system, false);
 		auto result = r.system.perform_substitutions(r.system.get_hande("page_numbers_h"), text::unprocessed_text_source{ max_page, "max" }, text::unprocessed_text_source{ current_page, "current" });
 		text_data->set_text(r.system, std::move(result));
+		
 	} else {
+		text_data->set_is_multiline(r.system, true);
 		auto result = r.system.perform_substitutions(r.system.get_hande("page_numbers_v"), text::unprocessed_text_source{ max_page, "max" }, text::unprocessed_text_source{ current_page, "current" });
 		text_data->set_text(r.system, std::move(result));
 	}
@@ -4488,6 +4494,10 @@ void static_text::on_create(root& r) {
 	margins = data.margins;
 	text_data->set_font(r.system, data.font);
 
+	if(data.default_text) {
+		text_data->set_text(r.system, r.system.perform_substitutions(data.default_text, nullptr, 0));
+	}
+
 	{
 		auto fn = r.get_on_update(ui_node::type_id);
 		fn(r, *this);
@@ -4502,6 +4512,10 @@ void static_text::on_create(root& r) {
 void static_text::on_reload(root& r) {
 	auto data = r.get_text_information(ui_node::type_id);
 	text_data->set_font(r.system, data.font);
+
+	if(data.default_text) {
+		text_data->set_text(r.system, r.system.perform_substitutions(data.default_text, nullptr, 0));
+	}
 
 	{
 		auto fn = r.get_on_create(ui_node::type_id);
@@ -4615,6 +4629,9 @@ void text_button::on_create(root& r) {
 	text_data->set_font(r.system, data.font);
 	margins = data.margins;
 
+	if(data.default_text) {
+		text_data->set_text(r.system, r.system.perform_substitutions(data.default_text, nullptr, 0));
+	}
 	{
 		auto fn = r.get_on_update(ui_node::type_id);
 		fn(r, *this);
@@ -4630,6 +4647,9 @@ void text_button::on_reload(root& r) {
 	auto data = r.get_text_information(ui_node::type_id);
 	text_data->set_font(r.system, data.font);
 
+	if(data.default_text) {
+		text_data->set_text(r.system, r.system.perform_substitutions(data.default_text, nullptr, 0));
+	}
 	{
 		auto fn = r.get_on_create(ui_node::type_id);
 		fn(r, *this);
@@ -4911,6 +4931,9 @@ void edit_control::on_create(root& r) {
 	margins = data.margins;
 	text_data->set_font(r.system, data.font);
 
+	if(data.default_text) {
+		text_data->set_text(r.system, r.system.perform_substitutions(data.default_text, nullptr, 0));
+	}
 	{
 		auto fn = r.get_on_update(ui_node::type_id);
 		fn(r, *this);
@@ -5027,6 +5050,10 @@ void root::load_locale_data(native_string_view locale) {
 
 	auto wintitle = system.perform_substitutions(system.get_hande("window_title"), nullptr, 0);
 	system.set_window_title(wintitle.text_content.c_str());
+
+	for(auto& ti : d_text_information) {
+		ti.second.text_resolved = false;
+	}
 }
 
 ui_node* effective_focus_target(ui_node* in) {

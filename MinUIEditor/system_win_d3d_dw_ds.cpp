@@ -5186,7 +5186,6 @@ void win_d2d_dw_ds::create_window(int32_t window_x_size, int32_t window_y_size, 
 	}
 
 	auto def_locale = get_default_locale();
-	set_locale(def_locale);
 	minui_root->load_locale_data(def_locale);
 	minui_root->load_definitions_from_file(std::move(def_file));
 	minui_root->make_base_element();

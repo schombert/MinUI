@@ -339,10 +339,16 @@ int main() {
 				0, //top border
 				0 //bottom border
 			};
-			// TODO text information
-		}
 
-		// TODO: rewrite how text information is saved / loaded
+			defs.d_text_information.insert_or_assign(5, text_information_def{
+				std::string(""),
+				minui::layout_rect{ minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 }, minui::em{ 0 } }, // margins
+				minui::text::font_handle{ 0 },
+				minui::text::content_alignment::centered,
+				minui::em{ 100 }, // min space
+				true // multiline
+			});
+		}
 
 		defs.save_to_file(L"ui.dat");
 	}
